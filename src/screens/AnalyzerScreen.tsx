@@ -10,9 +10,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
-import { ScamCategory, ScanResultData } from '../types/scam.types';
+import { ScamCategory } from '../types/scam.types';
 import { SMSAnalysisResult, SMSScamCategory } from '../types/sms.types';
 import { UPIAnalysisResult } from '../types/upi.types';
+import { URLAnalysisResult } from '../types/url.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
 import { AppHeader } from '../components/AppHeader';
 import { Input } from '../components/Input';
@@ -23,6 +24,7 @@ import { RiskIndicator } from '../components/RiskIndicator';
 import { ErrorView } from '../components/ErrorView';
 import { smsAnalyzer } from '../services/smsAnalyzer';
 import { upiAnalyzer } from '../services/upiAnalyzer';
+import { urlAnalyzer } from '../services/urlAnalyzer';
 import { useScamAnalyzer } from '../hooks/useScamAnalyzer';
 import { useTheme } from '../hooks/useTheme';
 import { getCategoryLabel } from '../utils/formatters';
@@ -70,17 +72,12 @@ const UPI_PRESETS = [
   { label: 'Malformed VPA', value: 'invalid-vpa-format-no-at' },
 ];
 
-const OTHER_PRESETS = {
-  url: [
-    { label: 'Phishing Domain', value: 'http://sbi-reward-points.top/claim' },
-    { label: 'Typosquatted Portal', value: 'https://electricity-bill-update-desk.site' },
-    { label: 'Official Site', value: 'https://cybercrime.gov.in' },
-  ],
-  screenshot: [
-    { label: 'Fake Paytm Receipt', value: 'fake_paytm_txn_receipt_5000.png' },
-    { label: 'Authentic GPay Receipt', value: 'authentic_gpay_receipt_150.jpg' },
-  ],
-};
+const URL_PRESETS = [
+  { label: 'Phishing TLD (.top)', value: 'http://sbi-reward-points.top/claim' },
+  { label: 'Typosquatted Portal', value: 'https://electricity-bill-update-desk.site' },
+  { label: 'Shortened Link', value: 'https://bit.ly/sbi-kyc-update-now' },
+  { label: 'Official Portal', value: 'https://cybercrime.gov.in' },
+];
 
 const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'sms', label: 'SMS / Message', icon: 'chatbox-ellipses-outline' },
@@ -106,6 +103,11 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [upiResult, setUPIResult] = useState<UPIAnalysisResult | null>(null);
   const [upiError, setUPIError] = useState<string | null>(null);
 
+  // Dedicated URL Analyzer States
+  const [isURLAnalyzing, setIsURLAnalyzing] = useState(false);
+  const [urlResult, setURLResult] = useState<URLAnalysisResult | null>(null);
+  const [urlError, setURLError] = useState<string | null>(null);
+
   useEffect(() => {
     if (route.params?.initialCategory) {
       setActiveCategory(route.params.initialCategory);
@@ -121,6 +123,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setSelectedScreenshot(null);
     setSMSError(null);
     setUPIError(null);
+    setURLError(null);
     clearGeneralError();
   };
 
@@ -150,6 +153,23 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
+  const handleAnalyzeURL = async () => {
+    setURLError(null);
+    setIsURLAnalyzing(true);
+    try {
+      const result = await urlAnalyzer.analyzeURL({ url: inputVal });
+      setURLResult(result);
+    } catch (err: any) {
+      setURLError(err.message || 'Failed to analyze URL');
+    } finally {
+      setIsURLAnalyzing(false);
+    }
+  };
+
+  const handlePasteURL = () => {
+    setInputVal('http://sbi-reward-points.top/claim');
+  };
+
   const handleGeneralAnalysis = async () => {
     if (activeCategory === 'sms') {
       await handleAnalyzeSMS();
@@ -157,6 +177,10 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     }
     if (activeCategory === 'upi_vpa') {
       await handleAnalyzeUPI();
+      return;
+    }
+    if (activeCategory === 'url') {
+      await handleAnalyzeURL();
       return;
     }
     const target = activeCategory === 'screenshot' ? (selectedScreenshot || 'sample_qr_proof.png') : inputVal;
@@ -341,77 +365,127 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
         </Card>
       )}
 
-      {/* MODES 3 & 4: URL AND SCREENSHOT ANALYZERS */}
-      {(activeCategory === 'url' || activeCategory === 'screenshot') && (
+      {/* MODE 3: URL PHISHING ANALYZER */}
+      {activeCategory === 'url' && (
         <Card style={styles.formCard}>
           <View style={styles.formHeader}>
-            <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.primary}1A` }]}>
-              <Ionicons
-                name={activeCategory === 'url' ? 'globe-outline' : 'image-outline'}
-                size={22}
-                color={theme.colors.primary}
-              />
+            <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.secondary}1A` }]}>
+              <Ionicons name="globe-outline" size={22} color={theme.colors.secondary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                {getCategoryLabel(activeCategory)} Scanner
+                Phishing Link / URL Analyzer
               </Text>
               <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
-                {activeCategory === 'url'
-                  ? 'Check domain age, SSL status, and typosquatting'
-                  : 'Extract receipt raster metrics to detect fake app screenshots'}
+                Inspects domain SSL, URL shorteners, subdomains & typosquatting
+              </Text>
+            </View>
+          </View>
+
+          {urlError && <ErrorView message={urlError} onRetry={() => setURLError(null)} />}
+
+          <View style={styles.inputWithPasteRow}>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="Paste Website URL / Link"
+                placeholder="e.g. http://sbi-reward-points.top/claim"
+                value={inputVal}
+                onChangeText={setInputVal}
+                iconName="globe-outline"
+                onClear={() => setInputVal('')}
+                containerStyle={{ marginBottom: 0 }}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.pasteBtn, { backgroundColor: `${theme.colors.primary}1A`, borderColor: `${theme.colors.primary}35` }]}
+              onPress={handlePasteURL}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="clipboard-outline" size={18} color={theme.colors.primary} />
+              <Text style={[styles.pasteBtnText, { color: theme.colors.primary }]}>Paste</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.inputHelperText, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+            Safe Inspection: Does NOT automatically open or navigate to submitted link.
+          </Text>
+
+          <Text style={[styles.presetHeader, { color: theme.colors.textSecondary, ...theme.typography.caption, marginTop: 10 }]}>
+            TEST URL PRESETS:
+          </Text>
+          <View style={styles.presetsRow}>
+            {URL_PRESETS.map((p, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.presetChip, { backgroundColor: `${theme.colors.secondary}18`, borderColor: `${theme.colors.secondary}30` }]}
+                onPress={() => setInputVal(p.value)}
+              >
+                <Text style={[styles.presetText, { color: theme.colors.secondary }]}>{p.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <PrimaryButton
+            title={isURLAnalyzing ? 'Analyzing Web Link...' : 'Analyze URL Threat Level'}
+            onPress={handleAnalyzeURL}
+            variant="cyber"
+            loading={isURLAnalyzing}
+            style={{ marginTop: 16 }}
+            icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
+          />
+        </Card>
+      )}
+
+      {/* MODE 4: SCREENSHOT ANALYZER */}
+      {activeCategory === 'screenshot' && (
+        <Card style={styles.formCard}>
+          <View style={styles.formHeader}>
+            <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.accent}1A` }]}>
+              <Ionicons name="image-outline" size={22} color={theme.colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                Screenshot Proof Analyzer
+              </Text>
+              <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+                Extract receipt raster metrics to detect fake app screenshots
               </Text>
             </View>
           </View>
 
           {generalError && <ErrorView message={generalError} onRetry={clearGeneralError} />}
 
-          {activeCategory === 'url' && (
-            <Input
-              label="Paste Website URL / Link"
-              placeholder="e.g. http://sbi-reward-points.top/claim"
-              value={inputVal}
-              onChangeText={setInputVal}
-              iconName="globe-outline"
-              onClear={() => setInputVal('')}
-              helperText="Inspects domain SSL, typosquatting, and malicious top-level domains"
-            />
-          )}
-
-          {activeCategory === 'screenshot' && (
-            <View style={styles.uploadArea}>
-              <TouchableOpacity
+          <View style={styles.uploadArea}>
+            <TouchableOpacity
+              style={[
+                styles.dropzone,
+                {
+                  borderColor: selectedScreenshot ? theme.colors.primary : theme.colors.border,
+                  backgroundColor: selectedScreenshot ? `${theme.colors.primary}10` : theme.colors.background,
+                },
+              ]}
+              onPress={() => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png')}
+            >
+              <Ionicons
+                name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
+                size={40}
+                color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
+              />
+              <Text
                 style={[
-                  styles.dropzone,
-                  {
-                    borderColor: selectedScreenshot ? theme.colors.primary : theme.colors.border,
-                    backgroundColor: selectedScreenshot ? `${theme.colors.primary}10` : theme.colors.background,
-                  },
+                  styles.uploadTitle,
+                  { color: selectedScreenshot ? theme.colors.primary : theme.colors.textPrimary },
                 ]}
-                onPress={() => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png')}
               >
-                <Ionicons
-                  name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
-                  size={40}
-                  color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
-                />
-                <Text
-                  style={[
-                    styles.uploadTitle,
-                    { color: selectedScreenshot ? theme.colors.primary : theme.colors.textPrimary },
-                  ]}
-                >
-                  {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
-                </Text>
-                <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
-                  Supports PNG, JPG (Simulated OCR font metric inspection)
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+                {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
+              </Text>
+              <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
+                Supports PNG, JPG (Simulated OCR font metric inspection)
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           <PrimaryButton
-            title={isGeneralAnalyzing ? 'Analyzing Security Indicators...' : 'Run Security Audit'}
+            title={isGeneralAnalyzing ? 'Analyzing Raster Metrics...' : 'Run Screenshot Audit'}
             onPress={handleGeneralAnalysis}
             variant="cyber"
             loading={isGeneralAnalyzing}
@@ -602,13 +676,10 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
 
             {upiResult && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Analysed UPI ID */}
                 <Card variant="bordered" style={{ marginBottom: 12 }}>
                   <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Target UPI ID (VPA)</Text>
                   <Text style={[styles.upiIdTitleText, { color: theme.colors.primary }]}>{upiResult.upiId}</Text>
                   <View style={styles.divider} />
-                  
-                  {/* Format Validation Banner */}
                   <View style={styles.formatValidationBox}>
                     <Ionicons
                       name={upiResult.isValidFormat ? 'checkmark-circle' : 'close-circle'}
@@ -627,7 +698,6 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                   </View>
                 </Card>
 
-                {/* Risk Gauge */}
                 <RiskIndicator
                   score={upiResult.riskScore}
                   level={
@@ -641,7 +711,6 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                   }
                 />
 
-                {/* Verdict & Meta Badges */}
                 <Card variant="bordered" style={styles.metaBadgeCard}>
                   <View style={styles.metaRow}>
                     <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Verdict Status</Text>
@@ -665,7 +734,6 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                   </View>
                 </Card>
 
-                {/* Explanation (Highlights format vs risk distinction) */}
                 <Card variant="bordered" style={{ marginBottom: 12 }}>
                   <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
                     Risk Assessment Explanation
@@ -675,7 +743,6 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                   </Text>
                 </Card>
 
-                {/* Suspicious Indicators */}
                 <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 6 }]}>
                   Suspicious Indicators ({upiResult.suspiciousIndicators.length})
                 </Text>
@@ -692,25 +759,6 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                   ))
                 )}
 
-                {/* Detected Scam Patterns */}
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
-                  Detected Scam Patterns ({upiResult.detectedScamPatterns.length})
-                </Text>
-                {upiResult.detectedScamPatterns.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
-                    ✓ No matching fraud pattern templates.
-                  </Text>
-                ) : (
-                  <View style={styles.presetsRow}>
-                    {upiResult.detectedScamPatterns.map((pat, idx) => (
-                      <View key={idx} style={[styles.patternChip, { backgroundColor: `${theme.colors.danger}20`, borderColor: `${theme.colors.danger}40` }]}>
-                        <Text style={[styles.patternChipText, { color: theme.colors.danger }]}>{pat}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Recommended Action */}
                 <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
                   Recommended Guidance
                 </Text>
@@ -726,6 +774,139 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                 <PrimaryButton
                   title="Close UPI Assessment"
                   onPress={() => setUPIResult(null)}
+                  variant="secondary"
+                  style={{ marginTop: 16 }}
+                />
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* URL RESULT MODAL */}
+      <Modal
+        visible={!!urlResult}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setURLResult(null)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                URL Phishing Assessment Report
+              </Text>
+              <TouchableOpacity onPress={() => setURLResult(null)} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {urlResult && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Card variant="bordered" style={{ marginBottom: 12 }}>
+                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Analyzed Link (URL)</Text>
+                  <Text style={[styles.upiIdTitleText, { color: theme.colors.secondary }]} numberOfLines={2}>
+                    {urlResult.url}
+                  </Text>
+                  <View style={styles.divider} />
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Domain Host</Text>
+                    <Text style={[styles.metaValText, { color: theme.colors.textPrimary }]}>{urlResult.domain}</Text>
+                  </View>
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>SSL Encryption</Text>
+                    <Text style={[styles.metaValText, { color: urlResult.hasSSL ? theme.colors.safe : theme.colors.danger }]}>
+                      {urlResult.hasSSL ? '✓ HTTPS Encrypted' : '❌ Unencrypted (HTTP)'}
+                    </Text>
+                  </View>
+                </Card>
+
+                <RiskIndicator
+                  score={urlResult.riskScore}
+                  level={
+                    urlResult.riskLevel === 'CRITICAL'
+                      ? 'critical'
+                      : urlResult.riskLevel === 'HIGH'
+                      ? 'high_risk'
+                      : urlResult.riskLevel === 'MEDIUM'
+                      ? 'caution'
+                      : 'safe'
+                  }
+                />
+
+                <Card variant="bordered" style={styles.metaBadgeCard}>
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Verdict Status</Text>
+                    <RiskBadge
+                      level={
+                        urlResult.riskLevel === 'CRITICAL'
+                          ? 'critical'
+                          : urlResult.riskLevel === 'HIGH'
+                          ? 'high_risk'
+                          : urlResult.riskLevel === 'MEDIUM'
+                          ? 'caution'
+                          : 'safe'
+                      }
+                      customText={urlResult.verdict.replace('_', ' ')}
+                    />
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Risk Level</Text>
+                    <Text style={[styles.metaValText, { color: theme.colors.textPrimary }]}>{urlResult.riskLevel}</Text>
+                  </View>
+                </Card>
+
+                <Card variant="bordered" style={{ marginBottom: 12 }}>
+                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
+                    Risk Assessment Rating Explanation
+                  </Text>
+                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
+                    {urlResult.explanation}
+                  </Text>
+                </Card>
+
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 6 }]}>
+                  Detected Risk Indicators ({urlResult.detectedIndicators.length})
+                </Text>
+                {urlResult.detectedIndicators.length === 0 ? (
+                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
+                    ✓ No suspicious domain indicators or typosquatting traps detected.
+                  </Text>
+                ) : (
+                  urlResult.detectedIndicators.map((ind) => (
+                    <View key={ind.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
+                      <View style={styles.flagTop}>
+                        <Ionicons name="globe" size={16} color={theme.colors.secondary} style={{ marginRight: 6 }} />
+                        <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{ind.title}</Text>
+                        <RiskBadge
+                          level={ind.severity === 'critical' ? 'critical' : ind.severity === 'high' ? 'high_risk' : 'caution'}
+                          customText={ind.severity.toUpperCase()}
+                          size="small"
+                        />
+                      </View>
+                      <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
+                        {ind.description}
+                      </Text>
+                    </View>
+                  ))
+                )}
+
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
+                  Recommended Guidance
+                </Text>
+                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
+                  <View style={styles.actionItemRow}>
+                    <Ionicons name="shield-checkmark" size={16} color={theme.colors.primary} style={{ marginRight: 8, marginTop: 2 }} />
+                    <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>
+                      {urlResult.recommendation}
+                    </Text>
+                  </View>
+                </View>
+
+                <PrimaryButton
+                  title="Close URL Assessment"
+                  onPress={() => setURLResult(null)}
                   variant="secondary"
                   style={{ marginTop: 16 }}
                 />
@@ -778,6 +959,29 @@ const styles = StyleSheet.create({
   },
   formSub: {
     marginTop: 1,
+  },
+  inputWithPasteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginLeft: 8,
+    marginTop: 18,
+  },
+  pasteBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginLeft: 4,
+  },
+  inputHelperText: {
+    marginTop: 4,
+    marginBottom: 6,
   },
   charCounterRow: {
     alignItems: 'flex-end',
@@ -936,7 +1140,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   upiIdTitleText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     marginVertical: 4,
   },
@@ -948,6 +1152,18 @@ const styles = StyleSheet.create({
   formatValidationText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  indicatorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  indicatorText: {
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
   },
   categoryBadgePill: {
     paddingHorizontal: 10,
@@ -992,30 +1208,6 @@ const styles = StyleSheet.create({
   flagDesc: {
     fontSize: 12,
     lineHeight: 16,
-  },
-  indicatorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 6,
-  },
-  indicatorText: {
-    fontSize: 12,
-    lineHeight: 16,
-    flex: 1,
-  },
-  patternChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  patternChipText: {
-    fontSize: 11,
-    fontWeight: '800',
   },
   actionListBox: {
     padding: 12,
