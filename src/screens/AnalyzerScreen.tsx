@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -14,6 +15,7 @@ import { ScamCategory } from '../types/scam.types';
 import { SMSAnalysisResult, SMSScamCategory } from '../types/sms.types';
 import { UPIAnalysisResult } from '../types/upi.types';
 import { URLAnalysisResult } from '../types/url.types';
+import { ScreenshotAnalysisResult } from '../types/screenshot.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
 import { AppHeader } from '../components/AppHeader';
 import { Input } from '../components/Input';
@@ -25,9 +27,8 @@ import { ErrorView } from '../components/ErrorView';
 import { smsAnalyzer } from '../services/smsAnalyzer';
 import { upiAnalyzer } from '../services/upiAnalyzer';
 import { urlAnalyzer } from '../services/urlAnalyzer';
-import { useScamAnalyzer } from '../hooks/useScamAnalyzer';
+import { screenshotAnalyzer, MANDATORY_SCREENSHOT_DISCLAIMER } from '../services/screenshotAnalyzer';
 import { useTheme } from '../hooks/useTheme';
-import { getCategoryLabel } from '../utils/formatters';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Analyze'>;
 
@@ -79,6 +80,11 @@ const URL_PRESETS = [
   { label: 'Official Portal', value: 'https://cybercrime.gov.in' },
 ];
 
+const SCREENSHOT_PRESETS = [
+  { label: 'Fake Paytm Proof (Manipulated)', value: 'fake_paytm_txn_receipt_5000.png' },
+  { label: 'Authentic GPay Receipt', value: 'authentic_gpay_receipt_150.jpg' },
+];
+
 const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'sms', label: 'SMS / Message', icon: 'chatbox-ellipses-outline' },
   { key: 'upi_vpa', label: 'UPI ID', icon: 'at-circle-outline' },
@@ -88,10 +94,8 @@ const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons
 
 export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const theme = useTheme();
-  const { isAnalyzing: isGeneralAnalyzing, activeCategory, setActiveCategory, analyze, error: generalError, clearError: clearGeneralError } = useScamAnalyzer();
-
+  const [activeCategory, setActiveCategory] = useState<ScamCategory>('sms');
   const [inputVal, setInputVal] = useState('');
-  const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
 
   // Dedicated SMS Analyzer States
   const [isSMSAnalyzing, setIsSMSAnalyzing] = useState(false);
@@ -107,6 +111,12 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [isURLAnalyzing, setIsURLAnalyzing] = useState(false);
   const [urlResult, setURLResult] = useState<URLAnalysisResult | null>(null);
   const [urlError, setURLError] = useState<string | null>(null);
+
+  // Dedicated Screenshot Analyzer States
+  const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
+  const [isScreenshotAnalyzing, setIsScreenshotAnalyzing] = useState(false);
+  const [screenshotResult, setScreenshotResult] = useState<ScreenshotAnalysisResult | null>(null);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
 
   useEffect(() => {
     if (route.params?.initialCategory) {
@@ -124,7 +134,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setSMSError(null);
     setUPIError(null);
     setURLError(null);
-    clearGeneralError();
+    setScreenshotError(null);
   };
 
   const handleAnalyzeSMS = async () => {
@@ -166,25 +176,34 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  const handlePasteURL = () => {
-    setInputVal('http://sbi-reward-points.top/claim');
+  const handleAnalyzeScreenshot = async () => {
+    setScreenshotError(null);
+    setIsScreenshotAnalyzing(true);
+    try {
+      const targetUri = selectedScreenshot || 'fake_paytm_txn_receipt_5000.png';
+      const result = await screenshotAnalyzer.analyzeScreenshot({ imageUri: targetUri });
+      setScreenshotResult(result);
+    } catch (err: any) {
+      setScreenshotError(err.message || 'Failed to analyze payment screenshot');
+    } finally {
+      setIsScreenshotAnalyzing(false);
+    }
   };
 
-  const handleGeneralAnalysis = async () => {
-    if (activeCategory === 'sms') {
-      await handleAnalyzeSMS();
-      return;
-    }
-    if (activeCategory === 'upi_vpa') {
-      await handleAnalyzeUPI();
-      return;
-    }
-    if (activeCategory === 'url') {
-      await handleAnalyzeURL();
-      return;
-    }
-    const target = activeCategory === 'screenshot' ? (selectedScreenshot || 'sample_qr_proof.png') : inputVal;
-    await analyze(activeCategory, target);
+  const handlePickImage = () => {
+    Alert.alert(
+      'Select Image Source',
+      'Choose a payment screenshot to analyze OCR text & font raster metrics.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sample Fake Proof', onPress: () => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png') },
+        { text: 'Sample Authentic Proof', onPress: () => setSelectedScreenshot('authentic_gpay_receipt_150.jpg') },
+      ],
+    );
+  };
+
+  const handlePasteURL = () => {
+    setInputVal('http://sbi-reward-points.top/claim');
   };
 
   const charCount = inputVal.length;
@@ -435,7 +454,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
         </Card>
       )}
 
-      {/* MODE 4: SCREENSHOT ANALYZER */}
+      {/* MODE 4: SCREENSHOT SCAM ANALYZER */}
       {activeCategory === 'screenshot' && (
         <Card style={styles.formCard}>
           <View style={styles.formHeader}>
@@ -447,48 +466,90 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
                 Screenshot Proof Analyzer
               </Text>
               <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
-                Extract receipt raster metrics to detect fake app screenshots
+                OCR text extraction & font metric analysis to detect fake receipts
               </Text>
             </View>
           </View>
 
-          {generalError && <ErrorView message={generalError} onRetry={clearGeneralError} />}
+          {screenshotError && <ErrorView message={screenshotError} onRetry={() => setScreenshotError(null)} />}
 
+          {/* Image Selection / Dropzone Container */}
           <View style={styles.uploadArea}>
-            <TouchableOpacity
-              style={[
-                styles.dropzone,
-                {
-                  borderColor: selectedScreenshot ? theme.colors.primary : theme.colors.border,
-                  backgroundColor: selectedScreenshot ? `${theme.colors.primary}10` : theme.colors.background,
-                },
-              ]}
-              onPress={() => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png')}
-            >
-              <Ionicons
-                name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
-                size={40}
-                color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
-              />
-              <Text
+            {selectedScreenshot ? (
+              <View style={[styles.imagePreviewBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.primary }]}>
+                <View style={styles.imagePreviewHeader}>
+                  <Ionicons name="image" size={24} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.imagePreviewTitle, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                      {selectedScreenshot}
+                    </Text>
+                    <Text style={[styles.imagePreviewSub, { color: theme.colors.textMuted }]}>
+                      Ready for OCR raster & font metric analysis
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.imagePreviewActionRow}>
+                  <TouchableOpacity
+                    style={[styles.imageActionBtn, { backgroundColor: `${theme.colors.primary}18`, borderColor: `${theme.colors.primary}30` }]}
+                    onPress={handlePickImage}
+                  >
+                    <Ionicons name="swap-horizontal" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={[styles.imageActionText, { color: theme.colors.primary }]}>Change Image</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.imageActionBtn, { backgroundColor: `${theme.colors.danger}18`, borderColor: 'rgba(239, 68, 68, 0.4)' }]}
+                    onPress={() => setSelectedScreenshot(null)}
+                  >
+                    <Ionicons name="trash-outline" size={14} color={theme.colors.danger} style={{ marginRight: 4 }} />
+                    <Text style={[styles.imageActionText, { color: theme.colors.danger }]}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
                 style={[
-                  styles.uploadTitle,
-                  { color: selectedScreenshot ? theme.colors.primary : theme.colors.textPrimary },
+                  styles.dropzone,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.background,
+                  },
                 ]}
+                onPress={handlePickImage}
+                activeOpacity={0.8}
               >
-                {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
-              </Text>
-              <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
-                Supports PNG, JPG (Simulated OCR font metric inspection)
-              </Text>
-            </TouchableOpacity>
+                <Ionicons name="cloud-upload-outline" size={42} color={theme.colors.textMuted} />
+                <Text style={[styles.uploadTitle, { color: theme.colors.textPrimary }]}>
+                  Select Payment Screenshot from Gallery
+                </Text>
+                <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
+                  Supports PNG, JPG, WEBP (Max size 10MB)
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <Text style={[styles.presetHeader, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+            TEST RECEIPT PRESETS:
+          </Text>
+          <View style={styles.presetsRow}>
+            {SCREENSHOT_PRESETS.map((p, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.presetChip, { backgroundColor: `${theme.colors.accent}18`, borderColor: `${theme.colors.accent}30` }]}
+                onPress={() => setSelectedScreenshot(p.value)}
+              >
+                <Text style={[styles.presetText, { color: theme.colors.accent }]}>{p.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           <PrimaryButton
-            title={isGeneralAnalyzing ? 'Analyzing Raster Metrics...' : 'Run Screenshot Audit'}
-            onPress={handleGeneralAnalysis}
+            title={isScreenshotAnalyzing ? 'Running OCR & Font Analysis...' : 'Analyze Payment Proof'}
+            onPress={handleAnalyzeScreenshot}
             variant="cyber"
-            loading={isGeneralAnalyzing}
+            loading={isScreenshotAnalyzing}
             style={{ marginTop: 16 }}
             icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
           />
@@ -915,6 +976,174 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* SCREENSHOT RESULT MODAL */}
+      <Modal
+        visible={!!screenshotResult}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setScreenshotResult(null)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                Screenshot Proof Assessment Report
+              </Text>
+              <TouchableOpacity onPress={() => setScreenshotResult(null)} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {screenshotResult && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Image Identifier */}
+                <Card variant="bordered" style={{ marginBottom: 12 }}>
+                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Analyzed Screenshot Image</Text>
+                  <Text style={[styles.upiIdTitleText, { color: theme.colors.accent }]} numberOfLines={1}>
+                    {screenshotResult.imageUri}
+                  </Text>
+                </Card>
+
+                {/* Manipulation Warning Banner */}
+                {screenshotResult.manipulationWarning && (
+                  <View style={[styles.manipulationWarningBox, { backgroundColor: 'rgba(239, 68, 68, 0.18)', borderColor: theme.colors.danger }]}>
+                    <Ionicons name="warning" size={22} color={theme.colors.danger} style={{ marginRight: 10 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.manipulationTitle, { color: theme.colors.danger }]}>
+                        MANIPULATION / SPOOF WARNING DETECTED
+                      </Text>
+                      <Text style={[styles.manipulationSub, { color: theme.colors.textPrimary }]}>
+                        {screenshotResult.manipulationDetails || 'Font metric distortion detected.'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Risk Meter */}
+                <RiskIndicator
+                  score={screenshotResult.riskScore}
+                  level={
+                    screenshotResult.riskLevel === 'CRITICAL'
+                      ? 'critical'
+                      : screenshotResult.riskLevel === 'HIGH'
+                      ? 'high_risk'
+                      : screenshotResult.riskLevel === 'MEDIUM'
+                      ? 'caution'
+                      : 'safe'
+                  }
+                />
+
+                {/* Extracted OCR Data Summary Grid */}
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 8 }]}>
+                  Extracted Receipt OCR Metrics
+                </Text>
+                <Card variant="bordered" style={styles.ocrGridCard}>
+                  <View style={styles.ocrGridRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Amount</Text>
+                    <Text style={[styles.ocrValHighlight, { color: theme.colors.primary }]}>
+                      {screenshotResult.extractedData.transactionAmount || 'N/A'}
+                    </Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.ocrGridRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>UTR / Ref Number</Text>
+                    <Text style={[styles.ocrValText, { color: theme.colors.textPrimary }]}>
+                      {screenshotResult.extractedData.utrReferenceNumber || 'N/A'}
+                    </Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.ocrGridRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Payee / Receiver</Text>
+                    <Text style={[styles.ocrValText, { color: theme.colors.textPrimary }]}>
+                      {screenshotResult.extractedData.receiverPayeeName || 'N/A'}
+                    </Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.ocrGridRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Detected Payment App</Text>
+                    <Text style={[styles.ocrValText, { color: theme.colors.accent }]}>
+                      {screenshotResult.extractedData.detectedPaymentApp || 'N/A'}
+                    </Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.ocrGridRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Detected Timestamp</Text>
+                    <Text style={[styles.ocrValText, { color: theme.colors.textMuted }]}>
+                      {screenshotResult.extractedData.detectedTimestamp || 'N/A'}
+                    </Text>
+                  </View>
+                </Card>
+
+                {/* Explanation */}
+                <Card variant="bordered" style={{ marginBottom: 12 }}>
+                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
+                    AI Analysis Explanation
+                  </Text>
+                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
+                    {screenshotResult.explanation}
+                  </Text>
+                </Card>
+
+                {/* Mandatory Disclaimer Box */}
+                <View style={[styles.disclaimerBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: theme.colors.caution }]}>
+                  <Ionicons name="information-circle-outline" size={20} color={theme.colors.caution} style={{ marginRight: 8 }} />
+                  <Text style={[styles.disclaimerText, { color: theme.colors.caution }]}>
+                    {screenshotResult.disclaimer}
+                  </Text>
+                </View>
+
+                {/* Suspicious Indicators */}
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 12, marginBottom: 6 }]}>
+                  Raster & Font Anomalies ({screenshotResult.suspiciousIndicators.length})
+                </Text>
+                {screenshotResult.suspiciousIndicators.length === 0 ? (
+                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
+                    ✓ Receipt layout conforms to authentic banking receipt templates.
+                  </Text>
+                ) : (
+                  screenshotResult.suspiciousIndicators.map((ind) => (
+                    <View key={ind.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
+                      <View style={styles.flagTop}>
+                        <Ionicons name="image" size={16} color={theme.colors.danger} style={{ marginRight: 6 }} />
+                        <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{ind.title}</Text>
+                        <RiskBadge
+                          level={ind.severity === 'critical' ? 'critical' : ind.severity === 'high' ? 'high_risk' : 'caution'}
+                          customText={ind.severity.toUpperCase()}
+                          size="small"
+                        />
+                      </View>
+                      <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
+                        {ind.description}
+                      </Text>
+                    </View>
+                  ))
+                )}
+
+                {/* Recommendation */}
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
+                  Recommended Guidance
+                </Text>
+                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
+                  <View style={styles.actionItemRow}>
+                    <Ionicons name="shield-checkmark" size={16} color={theme.colors.primary} style={{ marginRight: 8, marginTop: 2 }} />
+                    <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>
+                      {screenshotResult.recommendation}
+                    </Text>
+                  </View>
+                </View>
+
+                <PrimaryButton
+                  title="Close Screenshot Assessment"
+                  onPress={() => setScreenshotResult(null)}
+                  variant="secondary"
+                  style={{ marginTop: 16 }}
+                />
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 };
@@ -1063,6 +1292,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
+  imagePreviewBox: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  imagePreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  imagePreviewTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  imagePreviewSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  imagePreviewActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  imageActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  imageActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -1152,6 +1416,56 @@ const styles = StyleSheet.create({
   formatValidationText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  manipulationWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  manipulationTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  manipulationSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  ocrGridCard: {
+    padding: 12,
+    marginBottom: 12,
+  },
+  ocrGridRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  ocrValHighlight: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  ocrValText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  disclaimerBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    flex: 1,
   },
   indicatorBox: {
     flexDirection: 'row',
