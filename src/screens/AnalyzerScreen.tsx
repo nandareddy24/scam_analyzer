@@ -26,6 +26,7 @@ import { smsAnalyzer } from '../services/smsAnalyzer';
 import { upiAnalyzer } from '../services/upiAnalyzer';
 import { urlAnalyzer } from '../services/urlAnalyzer';
 import { screenshotAnalyzer } from '../services/screenshotAnalyzer';
+import { scanHistoryStorage } from '../storage/scanHistory';
 import { useTheme } from '../hooks/useTheme';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Analyze'>;
@@ -127,7 +128,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setIsAnalyzing(true);
     try {
       const res: SMSAnalysisResult = await smsAnalyzer.analyzeSMS({ messageText: inputVal });
-      setActiveResult({
+      const resultObj: AnalysisResultData = {
         id: res.id,
         verdict: res.verdict as any,
         riskScore: res.riskScore,
@@ -137,7 +138,22 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
         explanation: res.explanation,
         redFlags: res.detectedRedFlags,
         recommendedActions: res.recommendedActions,
-      });
+      };
+      setActiveResult(resultObj);
+
+      // Auto-save to local persistent storage
+      scanHistoryStorage.addScan({
+        type: 'sms',
+        inputSummary: inputVal,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: res.scamCategory,
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        recommendations: res.recommendedActions,
+        redFlags: res.detectedRedFlags,
+      }).catch((e) => console.warn('Failed to auto-save scan:', e));
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to analyze SMS content');
     } finally {
@@ -150,7 +166,13 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setIsAnalyzing(true);
     try {
       const res: UPIAnalysisResult = await upiAnalyzer.analyzeUPI({ upiId: inputVal });
-      setActiveResult({
+      const redFlags = res.suspiciousIndicators.map((ind, idx) => ({
+        id: `upi_flag_${idx}`,
+        title: 'VPA Handle Anomaly',
+        description: ind,
+        severity: 'high' as const,
+      }));
+      const resultObj: AnalysisResultData = {
         id: res.id,
         verdict: res.verdict as any,
         riskScore: res.riskScore,
@@ -158,18 +180,27 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
         category: 'UPI VPA Handle',
         confidencePercentage: res.confidencePercentage || 92,
         explanation: res.explanation,
-        redFlags: res.suspiciousIndicators.map((ind, idx) => ({
-          id: `upi_flag_${idx}`,
-          title: 'VPA Handle Anomaly',
-          description: ind,
-          severity: 'high',
-        })),
+        redFlags,
         recommendedActions: [res.recommendedAction],
         extractedMetrics: {
           'Target UPI VPA': res.upiId,
           'Format Syntax Status': res.formatValidationMessage,
         },
-      });
+      };
+      setActiveResult(resultObj);
+
+      scanHistoryStorage.addScan({
+        type: 'upi_vpa',
+        inputSummary: inputVal,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'UPI VPA Handle',
+        confidencePercentage: res.confidencePercentage || 92,
+        explanation: res.explanation,
+        recommendations: [res.recommendedAction],
+        redFlags,
+      }).catch((e) => console.warn('Failed to auto-save scan:', e));
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to analyze UPI ID');
     } finally {
@@ -182,7 +213,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setIsAnalyzing(true);
     try {
       const res: URLAnalysisResult = await urlAnalyzer.analyzeURL({ url: inputVal });
-      setActiveResult({
+      const resultObj: AnalysisResultData = {
         id: res.id,
         verdict: res.verdict as any,
         riskScore: res.riskScore,
@@ -197,7 +228,21 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           'Domain Host': res.domain,
           'SSL Encryption': res.hasSSL ? '✓ HTTPS Encrypted' : '❌ Unencrypted (HTTP)',
         },
-      });
+      };
+      setActiveResult(resultObj);
+
+      scanHistoryStorage.addScan({
+        type: 'url',
+        inputSummary: inputVal,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'Web Link Phishing',
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        recommendations: [res.recommendation],
+        redFlags: res.detectedIndicators,
+      }).catch((e) => console.warn('Failed to auto-save scan:', e));
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to analyze URL link');
     } finally {
@@ -211,7 +256,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       const targetUri = selectedScreenshot || 'fake_paytm_txn_receipt_5000.png';
       const res: ScreenshotAnalysisResult = await screenshotAnalyzer.analyzeScreenshot({ imageUri: targetUri });
-      setActiveResult({
+      const resultObj: AnalysisResultData = {
         id: res.id,
         verdict: res.verdict as any,
         riskScore: res.riskScore,
@@ -229,7 +274,21 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           'Payment App': res.extractedData.detectedPaymentApp || 'N/A',
           'Timestamp': res.extractedData.detectedTimestamp || 'N/A',
         },
-      });
+      };
+      setActiveResult(resultObj);
+
+      scanHistoryStorage.addScan({
+        type: 'screenshot',
+        inputSummary: targetUri,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'Payment Proof Receipt',
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        recommendations: [res.recommendation],
+        redFlags: res.suspiciousIndicators,
+      }).catch((e) => console.warn('Failed to auto-save scan:', e));
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to analyze payment screenshot');
     } finally {
