@@ -1,7 +1,7 @@
 import os
 import re
 import joblib
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
@@ -13,11 +13,18 @@ class SMSScamModel:
     Independent scikit-learn Machine Learning pipeline for SMS scam classification.
     Uses TF-IDF feature extraction with Random Forest classification.
     """
-    def __init__(self):
+    def __init__(self, filepath: Optional[str] = None):
         self.pipeline = Pipeline([
             ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=1500, sublinear_tf=True)),
             ("classifier", RandomForestClassifier(n_estimators=100, random_state=42)),
         ])
+        default_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models", "sms_model.joblib"))
+        target_path = filepath or default_path
+        if os.path.exists(target_path):
+            try:
+                self.load(target_path)
+            except Exception:
+                pass
 
     @staticmethod
     def preprocess_text(text: str) -> str:

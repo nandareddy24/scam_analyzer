@@ -1,7 +1,7 @@
 import os
 import re
 import joblib
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
@@ -13,11 +13,18 @@ class URLPhishingModel:
     Independent scikit-learn Machine Learning pipeline for URL phishing classification.
     Uses sub-word character n-gram TF-IDF vectorization with Random Forest classification.
     """
-    def __init__(self):
+    def __init__(self, filepath: Optional[str] = None):
         self.pipeline = Pipeline([
             ("tfidf", TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=1)),
             ("classifier", RandomForestClassifier(n_estimators=100, random_state=42)),
         ])
+        default_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models", "url_model.joblib"))
+        target_path = filepath or default_path
+        if os.path.exists(target_path):
+            try:
+                self.load(target_path)
+            except Exception:
+                pass
 
     @staticmethod
     def preprocess_url(url: str) -> str:
