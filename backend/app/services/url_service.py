@@ -1,6 +1,7 @@
 from backend.app.schemas.requests import URLAnalysisRequest
 from backend.app.schemas.responses import AnalysisResponse, RedFlag
 from backend.app.utils.heuristics import evaluate_url_heuristics
+from backend.app.ml.model_loader import model_loader
 from backend.app.utils.logger import logger
 
 
@@ -11,11 +12,27 @@ class URLService:
 
         heuristic_res = evaluate_url_heuristics(request.url)
 
-        verdict = heuristic_res["verdict"]
-        risk_score = heuristic_res["risk_score"]
-        risk_level = heuristic_res["risk_level"]
+        # 2. Run Real ML Inference if loaded
+        ml_prob = 0.0
+        ml_confidence = None
+
+        if model_loader.url_model:
+            try:
+                probs = model_loader.url_model.predict_proba([request.url])[0]
+                ml_prob = float(probs[1]) if len(probs) > 1 else float(probs[0])
+                ml_confidence = round(max(probs), 4)
+                logger.info(f"URL ML Inference Output: prob={ml_prob:.4f}")
+            except Exception as e:
+                logger.warning(f"URL ML model inference error: {e}")
+
+        heur_score = heuristic_res["risk_score"]
+        ml_score = int(ml_prob * 100) if ml_confidence is not None else heur_score
+        
+        risk_score = max(heur_score, ml_score) if heuristic_res["category"] != "OFFICIAL_PORTAL" else heur_score
+        verdict = "PHISHING_SCAM" if risk_score >= 70 else "SUSPICIOUS" if risk_score >= 35 else "SAFE"
+        risk_level = "CRITICAL" if risk_score >= 80 else "HIGH" if risk_score >= 60 else "MEDIUM" if risk_score >= 30 else "LOW"
         category = heuristic_res["category"]
-        confidence = heuristic_res["confidence"]
+        confidence = ml_confidence if ml_confidence is not None else heuristic_res["confidence"]
 
         if verdict == "PHISHING_SCAM":
             explanation = "CRITICAL PHISHING WARNING: Link exhibits strong malicious domain indicators, unverified TLDs, or financial brand typosquatting. (Note: Treat URL analysis as a risk assessment rating, not absolute proof of fraud)."
@@ -51,5 +68,6 @@ class URLService:
                 "url": request.url,
                 "domain": heuristic_res["domain"],
                 "has_ssl": heuristic_res["has_ssl"],
+                "ml_phishing_probability": round(ml_prob, 4),
             },
         )

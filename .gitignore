@@ -1,5 +1,10 @@
 # dependencies
 node_modules/
+.expo/
+dist/
+web-build/
+backend/**/__pycache__/
+*.pyc
 
 # expo
 .expo/

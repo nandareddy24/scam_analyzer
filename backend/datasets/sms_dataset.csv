@@ -1,0 +1,31 @@
+text,label,category
+"123456 is your secret OTP for login to SBI YONO app. Do not share it with anyone.",0,legitimate
+"Your account XX4819 has been credited with Rs 1,500 via UPI on 30 Aug.",0,legitimate
+"Rs 250 debited from SBI account XX1209 to Zomato Online.",0,legitimate
+"Your electric bill of Rs 840 for Aug has been successfully processed.",0,legitimate
+"Dear customer, your credit card statement for Aug is generated.",0,legitimate
+"Your booking for flight AI-102 is confirmed. PNR: ABC123.",0,legitimate
+"Dear user, your HDFC bank balance is Rs 12,450.00 as of 31 Aug.",0,legitimate
+"Your mobile recharge of Rs 299 on Jio number 9876543210 is successful.",0,legitimate
+"SBI: Salary credit of Rs 65,000 received in A/c 5432.",0,legitimate
+"Amazon: Your order #402-9182312-98123 has been dispatched.",0,legitimate
+"HDFC Bank: Rs 500 debited for groceries at D-Mart.",0,legitimate
+"Swiggy: Order confirmed! Delivery executive assigned.",0,legitimate
+"Uber: Your trip fare Rs 180 has been paid via Paytm.",0,legitimate
+"Airtel: Your data pack 1.5GB daily has been renewed.",0,legitimate
+"ICICI Bank: OTP for netbanking transaction is 987123.",0,legitimate
+"CONGRATS! Rs 25,000 credited to your GPay account. Enter your 6-digit UPI PIN to accept payment immediately.",1,upi_collect_trap
+"URGENT NOTICE: CBI & Cyber Police issued Digital Arrest Warrant against your Aadhaar for illegal narcotics parcel. Join video call immediately.",1,digital_arrest
+"Dear customer, your SBI bank account blocked within 24 hours due to pending KYC. Update PAN card immediately at http://sbi-kyc-verify.top",1,kyc_suspension
+"Work from home job offer! Earn Rs 5000 per day by simply liking YouTube videos. Join Telegram t.me/work_earn_daily",1,part_time_job
+"Congratulations! You won KBC Lucky Draw prize of Rs 25 Lakhs. Contact Manager Ramesh Sharma on WhatsApp 9876543210 to claim.",1,lottery_scam
+"Dear Customer, your 8500 SBI Reward Points worth Rs 4250 expire today. Redeem now at http://sbi-rewards-claim.site",1,reward_points_trap
+"Electricity connection will be disconnected tonight 9:30 PM due to unpaid bill. Call electricity officer immediately at 9123456789",1,utility_scam
+"Urgent: Your HDFC netbanking access suspended. Click http://hdfc-security-update.online to re-verify credentials.",1,phishing
+"You have received a collect request of Rs 10,000 from PayTM Refund Desk. Pay now to claim cashback refund.",1,upi_collect_trap
+"Part time job opportunity: Earn Rs 3,000 daily rating Google Maps reviews. Pay registration fee of Rs 500.",1,part_time_job
+"Your Courier parcel containing illegal passport detained at Mumbai Customs. Pay fine immediately via UPI.",1,digital_arrest
+"Dear Airtel user, your SIM card will be blocked in 2 hours. Update 4G SIM KYC at http://airtel-sim-kyc.work",1,kyc_suspension
+"SBI Quick Loan approved for Rs 5,000,000. Click http://sbi-instant-loan.buzz to claim loan transfer.",1,phishing
+"Paytm cashback of Rs 999 is waiting! Enter your UPI PIN on Paytm page to receive funds.",1,upi_collect_trap
+"Axis Bank Notice: Update PAN immediately or your account will be permanently terminated.",1,kyc_suspension
