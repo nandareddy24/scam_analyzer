@@ -4,220 +4,90 @@ import {
   UPIRiskLevel,
   UPIVerdict,
 } from '../types/upi.types';
+import { upiApi } from '../api/upiApi';
 
-const SUSPICIOUS_KEYWORDS = [
-  { keyword: 'refund', label: 'Fake Refund Desk Keyword' },
-  { keyword: 'cashback', label: 'Cashback Claim Lure' },
-  { keyword: 'reward', label: 'Fake Bank Reward Lure' },
-  { keyword: 'lottery', label: 'Lottery Prize Keyword' },
-  { keyword: 'winner', label: 'Contest Winner Lure' },
-  { keyword: 'lucky', label: 'Lucky Draw Fraud' },
-  { keyword: 'support', label: 'Customer Support Impersonation' },
-  { keyword: 'helpdesk', label: 'Helpdesk Impersonation' },
-  { keyword: 'customer-care', label: 'Customer Care Impersonation' },
-  { keyword: 'kyc', label: 'KYC Block Threat' },
-  { keyword: 'claim', label: 'Unsolicited Claim Keyword' },
-  { keyword: 'verify', label: 'Verification Trap' },
-];
-
-const KNOWN_SAFE_MERCHANTS = [
-  'merchant.zomato@icici',
-  'swiggy@hdfcbank',
-  'uber@axisbank',
-  'bookmyshow@ybl',
-  'amazon@apl',
-  'flipkart@axisbank',
-];
+interface UPIFormatValidationResult {
+  isValid: boolean;
+  message: string;
+}
 
 export class UPIAnalyzerService {
-  /**
-   * Analyzes a UPI ID (Virtual Payment Address / VPA).
-   * Strictly separates Format Validation from Risk Assessment.
-   * Interface is prepared for seamless handoff to a Python/FastAPI ML backend.
-   */
+  validateUPIFormat(upiId: string): UPIFormatValidationResult {
+    const trimmed = upiId ? upiId.trim() : '';
+
+    if (!trimmed) {
+      return { isValid: false, message: 'UPI ID cannot be empty. Please enter a valid handle (e.g. example@upi).' };
+    }
+    if (trimmed.includes(' ')) {
+      return { isValid: false, message: 'UPI ID cannot contain spaces.' };
+    }
+    if (!trimmed.includes('@')) {
+      return { isValid: false, message: 'Malformed UPI ID: Missing "@" separator (e.g. username@handle).' };
+    }
+
+    const parts = trimmed.split('@');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      return { isValid: false, message: 'Invalid VPA format. Expected exactly one "@" separating username and handle.' };
+    }
+
+    return { isValid: true, message: 'Valid UPI ID syntax format.' };
+  }
+
   async analyzeUPI(request: UPIAnalysisRequest): Promise<UPIAnalysisResult> {
-    const rawInput = request.upiId?.trim() || '';
+    const rawInput = request.upiId ? request.upiId.trim() : '';
+    const formatCheck = this.validateUPIFormat(rawInput);
 
-    // 1. Basic Local Validation for Empty Input
     if (!rawInput) {
-      throw new Error('Please enter a UPI ID (e.g. example@upi) to analyze.');
+      throw new Error('Please enter a UPI ID (VPA) to analyze.');
     }
 
-    // Simulated API / FastAPI backend latency
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    try {
+      // 1. Call real FastAPI backend API endpoint
+      const response = await upiApi.analyzeUPI({ upi_id: rawInput });
 
-    // 2. Format Validation Checks
-    const formatValidation = this.validateUPIFormat(rawInput);
+      const indicators = (response.red_flags || []).map((rf) => `${rf.title}: ${rf.description}`);
+      const confidencePercentage = Math.round(response.confidence * 100);
 
-    // 3. Risk Assessment (Runs regardless of format validity)
-    const riskAssessment = this.evaluateUPIRisk(rawInput, formatValidation.isValid);
-
-    // 4. Return Normalized Analysis Result
-    return {
-      id: `upi_audit_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      upiId: rawInput,
-      isValidFormat: formatValidation.isValid,
-      formatValidationMessage: formatValidation.message,
-      riskScore: riskAssessment.riskScore,
-      riskLevel: riskAssessment.riskLevel,
-      verdict: riskAssessment.verdict,
-      confidencePercentage: riskAssessment.confidencePercentage,
-      suspiciousIndicators: riskAssessment.suspiciousIndicators,
-      detectedScamPatterns: riskAssessment.detectedScamPatterns,
-      explanation: riskAssessment.explanation,
-      recommendedAction: riskAssessment.recommendedAction,
-      rawMetadata: {
-        apiEndpoint: 'mock://services/upiAnalyzer.ts',
-        fastApiTarget: 'http://localhost:8000/api/v1/analyze/vpa',
-        formatValid: formatValidation.isValid,
-      },
-    };
-  }
-
-  /**
-   * Local Format Validation rules
-   */
-  private validateUPIFormat(vpa: string): { isValid: boolean; message: string } {
-    // Check spaces
-    if (/\s/.test(vpa)) {
-      return { isValid: false, message: 'Invalid Format: UPI IDs cannot contain spaces.' };
-    }
-
-    // Check invalid characters (emojis, symbols)
-    if (/[#$%^&*()=+[\]{}|\\:;"'<>,?/]/.test(vpa)) {
-      return { isValid: false, message: 'Invalid Format: Contains forbidden special characters.' };
-    }
-
-    // Check @ separator presence
-    const parts = vpa.split('@');
-    if (parts.length !== 2) {
-      return { isValid: false, message: 'Invalid Format: Must contain exactly one "@" separator (username@handle).' };
-    }
-
-    const [username, handle] = parts;
-
-    if (!username || username.trim().length === 0) {
-      return { isValid: false, message: 'Malformed VPA: Username section before "@" is empty.' };
-    }
-
-    if (!handle || handle.trim().length === 0) {
-      return { isValid: false, message: 'Malformed VPA: PSP Handle section after "@" is empty.' };
-    }
-
-    return { isValid: true, message: 'Valid UPI VPA Format (username@handle).' };
-  }
-
-  /**
-   * Risk Assessment Evaluation (Independent of Format Validation)
-   */
-  private evaluateUPIRisk(vpa: string, isValidFormat: boolean) {
-    const lower = vpa.toLowerCase();
-    const suspiciousIndicators: string[] = [];
-    const detectedScamPatterns: string[] = [];
-    let riskScore = 10;
-    let verdict: UPIVerdict = 'SAFE';
-    let riskLevel: UPIRiskLevel = 'LOW';
-    let confidencePercentage = 95;
-
-    // Check format invalidity contribution to risk
-    if (!isValidFormat) {
-      riskScore += 40;
-      suspiciousIndicators.push('Malformed VPA string format.');
-      detectedScamPatterns.push('Non-standard UPI ID Syntax');
-    }
-
-    // Check Known Safe Merchants
-    if (KNOWN_SAFE_MERCHANTS.includes(lower)) {
       return {
-        riskScore: 5,
-        verdict: 'SAFE' as UPIVerdict,
-        riskLevel: 'LOW' as UPIRiskLevel,
-        confidencePercentage: 99,
-        suspiciousIndicators: [],
-        detectedScamPatterns: [],
-        explanation: 'This handle matches a verified corporate merchant PSP account with clean transaction history.',
-        recommendedAction: 'Safe to proceed with payment. Confirm merchant name on payment authorization screen.',
+        id: `upi_api_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        upiId: rawInput,
+        isValidFormat: formatCheck.isValid,
+        formatValidationMessage: formatCheck.message,
+        riskScore: response.risk_score,
+        riskLevel: response.risk_level as UPIRiskLevel,
+        verdict: response.verdict as UPIVerdict,
+        confidencePercentage,
+        suspiciousIndicators: indicators,
+        detectedScamPatterns: (response.red_flags || []).map((rf) => rf.title),
+        explanation: response.explanation,
+        recommendedAction: response.recommendations[0] || 'Verify receiver identity before sending money.',
+        rawMetadata: response.details,
       };
+    } catch (apiErr: any) {
+      // Fallback local analysis if server offline
+      return this.fallbackLocalAnalysis(rawInput, formatCheck, apiErr.message);
     }
+  }
 
-    // Check Suspicious Keywords in VPA Username or Handle
-    SUSPICIOUS_KEYWORDS.forEach((item) => {
-      if (lower.includes(item.keyword)) {
-        riskScore += 35;
-        suspiciousIndicators.push(`VPA handle contains suspicious term "${item.keyword}".`);
-        detectedScamPatterns.push(item.label);
-      }
-    });
-
-    // Check Raw Phone Number Handle
-    const [userSection] = lower.split('@');
-    if (/^\d{10}$/.test(userSection)) {
-      riskScore += 20;
-      suspiciousIndicators.push('VPA uses raw phone number handle unlinked to merchant registry.');
-      detectedScamPatterns.push('Unverified P2P Phone Handle');
-    }
-
-    // Check Long auto-generated string
-    if (userSection && userSection.length > 20) {
-      riskScore += 15;
-      suspiciousIndicators.push('Unusually long username string commonly generated by automated scam scripts.');
-      detectedScamPatterns.push('Randomized Scripted Handle');
-    }
-
-    // Normalize Score
-    riskScore = Math.min(100, Math.max(0, riskScore));
-
-    // Determine Verdict & Risk Level
-    if (riskScore >= 75) {
-      verdict = 'SCAM';
-      riskLevel = 'CRITICAL';
-      confidencePercentage = 96;
-    } else if (riskScore >= 45) {
-      verdict = 'SUSPICIOUS';
-      riskLevel = 'HIGH';
-      confidencePercentage = 90;
-    } else if (riskScore >= 25) {
-      verdict = 'SUSPICIOUS';
-      riskLevel = 'MEDIUM';
-      confidencePercentage = 85;
-    } else {
-      verdict = 'SAFE';
-      riskLevel = 'LOW';
-      confidencePercentage = 92;
-    }
-
-    // Build Explanation emphasizing that format validity does NOT equal safety!
-    const formatNotice = isValidFormat
-      ? 'Note: While the UPI ID format is syntactically valid, risk assessment evaluates handle reputational patterns.'
-      : 'Warning: The UPI ID format is invalid and contains syntax errors.';
-
-    let explanation = '';
-    if (verdict === 'SCAM') {
-      explanation = `CRITICAL FRAUD THREAT: High probability of impersonation or fake support desk scam VPA. ${formatNotice}`;
-    } else if (verdict === 'SUSPICIOUS') {
-      explanation = `SUSPICIOUS HANDLE: Contains terms or structure frequently associated with refund/cashback lures. ${formatNotice}`;
-    } else {
-      explanation = `No flagged scam terms or suspicious impersonation patterns detected in VPA handle. ${formatNotice}`;
-    }
-
-    // Recommended Actions
-    const recommendedAction =
-      verdict === 'SCAM'
-        ? 'DO NOT TRANSFER FUNDS or enter your UPI PIN. Verify official payment details directly on bank portal.'
-        : verdict === 'SUSPICIOUS'
-        ? 'Exercise caution. Call the beneficiary directly to verify identity before initiating transfer.'
-        : 'Proceed with normal verification. Always double-check beneficiary name on payment confirmation screen.';
+  private fallbackLocalAnalysis(vpa: string, formatCheck: UPIFormatValidationResult, errNote?: string): UPIAnalysisResult {
+    const isSuspicious = vpa.toLowerCase().includes('refund') || vpa.toLowerCase().includes('helpdesk');
 
     return {
-      riskScore,
-      verdict,
-      riskLevel,
-      confidencePercentage,
-      suspiciousIndicators,
-      detectedScamPatterns,
-      explanation,
-      recommendedAction,
+      id: `upi_local_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      upiId: vpa,
+      isValidFormat: formatCheck.isValid,
+      formatValidationMessage: formatCheck.message,
+      riskScore: isSuspicious ? 75 : 15,
+      riskLevel: isSuspicious ? 'HIGH' : 'LOW',
+      verdict: isSuspicious ? 'SUSPICIOUS' : 'SAFE',
+      confidencePercentage: 86,
+      suspiciousIndicators: isSuspicious ? ['Contains suspicious fraud term'] : [],
+      detectedScamPatterns: isSuspicious ? ['Impersonation'] : [],
+      explanation: `OFFLINE ANALYSIS: ${formatCheck.message} (Note: Format validity does not guarantee trust!).`,
+      recommendedAction: 'Verify registered recipient name on your UPI payment screen.',
+      rawMetadata: { offlineMode: true, note: errNote },
     };
   }
 }
