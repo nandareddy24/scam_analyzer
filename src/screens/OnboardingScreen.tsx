@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
-import { Button } from '../components/Button';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { useTheme } from '../hooks/useTheme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
@@ -82,7 +82,7 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         </View>
 
         <View style={[styles.badgeContainer, { backgroundColor: `${theme.colors.safe}1F` }]}>
-          <Ionicons name="checkmark-seal" size={14} color={theme.colors.safe} style={{ marginRight: 4 }} />
+          <Ionicons name="checkmark-circle" size={14} color={theme.colors.safe} style={{ marginRight: 4 }} />
           <Text style={[styles.badgeText, { color: theme.colors.safe }]}>{slide.highlightText}</Text>
         </View>
 
@@ -112,7 +112,7 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
           ))}
         </View>
 
-        <Button
+        <PrimaryButton
           title={currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Get Started' : 'Next Step'}
           onPress={handleNext}
           variant="cyber"
@@ -125,7 +125,7 @@ export const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: {
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingVertical: 16,
   },
   topRow: {

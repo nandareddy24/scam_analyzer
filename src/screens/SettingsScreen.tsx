@@ -4,16 +4,15 @@ import {
   View,
   Text,
   Switch,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
-import { Header } from '../components/Header';
+import { AppHeader } from '../components/AppHeader';
 import { Card } from '../components/Card';
-import { Button } from '../components/Button';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { useTheme } from '../hooks/useTheme';
 import { historyStorage } from '../storage/historyStorage';
 import { APP_CONFIG } from '../constants/config';
@@ -27,7 +26,6 @@ export const SettingsScreen: React.FC<Props> = () => {
   const [autoUrlCheck, setAutoUrlCheck] = useState(true);
   const [biometricLock, setBiometricLock] = useState(false);
   const [threatAlerts, setThreatAlerts] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
 
   const handleResetData = () => {
     Alert.alert(
@@ -49,9 +47,10 @@ export const SettingsScreen: React.FC<Props> = () => {
 
   return (
     <ScreenWrapper scrollable>
-      <Header
+      <AppHeader
         title="App Settings"
         subtitle="Security toggles, guard parameters & system status"
+        hasUnreadNotifications={false}
       />
 
       {/* Security Shield Preferences */}
@@ -128,7 +127,7 @@ export const SettingsScreen: React.FC<Props> = () => {
 
         <View style={styles.settingRow}>
           <View style={styles.settingLeft}>
-            <Ionicons name="notifications-active-outline" size={22} color={theme.colors.caution} style={styles.settingIcon} />
+            <Ionicons name="notifications-circle-outline" size={22} color={theme.colors.caution} style={styles.settingIcon} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>
                 High-Threat Push Alerts
@@ -165,7 +164,7 @@ export const SettingsScreen: React.FC<Props> = () => {
         <View style={styles.divider} />
         <View style={styles.infoRow}>
           <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Architecture Layer</Text>
-          <Text style={[styles.infoVal, { color: theme.colors.safe }]}>Modular Service Interface Ready</Text>
+          <Text style={[styles.infoVal, { color: theme.colors.safe }]}>Modular Service Interface</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.infoRow}>
@@ -175,7 +174,7 @@ export const SettingsScreen: React.FC<Props> = () => {
       </Card>
 
       {/* Reset Action Button */}
-      <Button
+      <PrimaryButton
         title="Reset Local Cache & Audit Logs"
         onPress={handleResetData}
         variant="danger"

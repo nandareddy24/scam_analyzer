@@ -4,33 +4,64 @@ import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
+import { AppHeader } from '../components/AppHeader';
+import { SecurityStatusCard } from '../components/SecurityStatusCard';
+import { AnalyzerCard } from '../components/AnalyzerCard';
+import { ScanHistoryCard } from '../components/ScanHistoryCard';
 import { Card } from '../components/Card';
-import { StatCard } from '../components/StatCard';
-import { QuickActionButton } from '../components/QuickActionButton';
-import { Badge } from '../components/Badge';
 import { useTheme } from '../hooks/useTheme';
 import { historyStorage } from '../storage/historyStorage';
 import { ScanResultData } from '../types/scam.types';
 import { APP_CONFIG } from '../constants/config';
-import { formatTimestamp } from '../utils/formatters';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Home'>;
+
+interface SafetyTip {
+  id: string;
+  title: string;
+  tip: string;
+  iconName: keyof typeof Ionicons.glyphMap;
+  badge: string;
+}
+
+const SAFETY_TIPS: SafetyTip[] = [
+  {
+    id: 'tip_1',
+    title: 'UPI PIN Golden Rule',
+    tip: 'You NEVER enter your UPI PIN to receive money in your bank account.',
+    iconName: 'key-outline',
+    badge: 'CRITICAL',
+  },
+  {
+    id: 'tip_2',
+    title: 'Beneficiary Check',
+    tip: 'Always verify the recipient name on your bank screen before authorizing payment.',
+    iconName: 'person-circle-outline',
+    badge: 'MUST KNOW',
+  },
+  {
+    id: 'tip_3',
+    title: 'Remote App Warning',
+    tip: 'Never download AnyDesk or TeamViewer on request of unknown support calls.',
+    iconName: 'alert-circle-outline',
+    badge: 'WARNING',
+  },
+];
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useTheme();
   const [recentScans, setRecentScans] = useState<ScanResultData[]>([]);
 
+  const loadScans = async () => {
+    const data = await historyStorage.getHistory();
+    setRecentScans(data.slice(0, 3));
+  };
+
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      historyStorage.getHistory().then((data) => {
-        setRecentScans(data.slice(0, 3));
-      });
+      loadScans();
     });
-
-    historyStorage.getHistory().then((data) => {
-      setRecentScans(data.slice(0, 3));
-    });
-
+    loadScans();
     return unsubscribe;
   }, [navigation]);
 
@@ -47,161 +78,129 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <ScreenWrapper scrollable>
-      {/* App Bar / Header */}
-      <View style={styles.topHeader}>
-        <View>
-          <View style={styles.brandRow}>
-            <Text style={[styles.appName, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-              UPI ScamGuard
-            </Text>
-            <View style={[styles.liveShield, { backgroundColor: `${theme.colors.safe}1F` }]}>
-              <View style={[styles.liveDot, { backgroundColor: theme.colors.safe }]} />
-              <Text style={[styles.liveText, { color: theme.colors.safe }]}>GUARD ACTIVE</Text>
-            </View>
-          </View>
-          <Text style={[styles.welcomeSub, { color: theme.colors.textSecondary, ...theme.typography.body2 }]}>
-            Real-Time AI Fraud Prevention Engine
-          </Text>
-        </View>
-
-        <TouchableOpacity style={[styles.bellBtn, { backgroundColor: theme.colors.cardBackground }]}>
-          <Ionicons name="notifications-outline" size={22} color={theme.colors.textPrimary} />
-          <View style={[styles.badgeDot, { backgroundColor: theme.colors.primary }]} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Security Health Widget */}
-      <Card variant="glowing" style={styles.healthCard}>
-        <View style={styles.healthHeader}>
-          <View style={styles.shieldBox}>
-            <Ionicons name="shield-checkmark" size={32} color={theme.colors.primary} />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.healthTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-              System Protection Active
-            </Text>
-            <Text style={[styles.healthSub, { color: theme.colors.textSecondary, ...theme.typography.body2 }]}>
-              Real-time heuristic & pattern checks operating at 98.4% accuracy
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.healthDivider} />
-
-        <View style={styles.healthFooter}>
-          <View style={styles.healthStatItem}>
-            <Text style={[styles.healthStatVal, { color: theme.colors.safe }]}>SAFE</Text>
-            <Text style={[styles.healthStatLbl, { color: theme.colors.textMuted }]}>SMS SHIELD</Text>
-          </View>
-
-          <View style={styles.healthStatItem}>
-            <Text style={[styles.healthStatVal, { color: theme.colors.primary }]}>ACTIVE</Text>
-            <Text style={[styles.healthStatLbl, { color: theme.colors.textMuted }]}>VPA VALIDATOR</Text>
-          </View>
-
-          <View style={styles.healthStatItem}>
-            <Text style={[styles.healthStatVal, { color: theme.colors.safe }]}>ENABLED</Text>
-            <Text style={[styles.healthStatLbl, { color: theme.colors.textMuted }]}>URL FILTER</Text>
-          </View>
-        </View>
-      </Card>
-
-      {/* Quick Metrics */}
-      <View style={styles.statsGrid}>
-        <StatCard
-          title="Scans Done"
-          value="48"
-          iconName="analytics-outline"
-          iconColor={theme.colors.primary}
-          subtitle="+12 this week"
-        />
-        <View style={{ width: 12 }} />
-        <StatCard
-          title="Threats Blocked"
-          value="7"
-          iconName="alert-circle-outline"
-          iconColor={theme.colors.danger}
-          subtitle="Saved ~₹42,000"
-        />
-      </View>
-
-      {/* Section: Quick Scanners */}
-      <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-        Instant Verification Tools
-      </Text>
-
-      <QuickActionButton
-        title="Check UPI VPA / Handle"
-        description="Verify recipient UPI ID before making payments"
-        iconName="at-circle-outline"
-        iconColor={theme.colors.primary}
-        onPress={() => navigation.navigate('Analyze', { initialCategory: 'upi_vpa' })}
-        badgeText="Popular"
+      {/* 1. Header */}
+      <AppHeader
+        title="UPI ScamGuard"
+        subtitle="Stay Safe from Digital Scams"
+        onNotificationPress={() => navigation.navigate('Settings')}
       />
 
-      <QuickActionButton
-        title="Scan SMS & Reward Claims"
-        description="Detect PIN theft traps and fake bank refund SMS"
+      {/* 2. Security status card */}
+      <SecurityStatusCard
+        statusText="Protected"
+        isProtected
+        lastScanTime="12m ago"
+        threatsBlockedCount={7}
+        onScanNowPress={() => navigation.navigate('Analyze')}
+      />
+
+      {/* 3. Quick Analyze section */}
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+          Quick Analyze
+        </Text>
+        <Text style={[styles.sectionSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+          Select a scanner mode to test for fraud
+        </Text>
+      </View>
+
+      <AnalyzerCard
+        mode="sms"
+        title="Analyze SMS"
+        subtitle="Detect PIN credit traps & fake bank rewards"
         iconName="chatbox-ellipses-outline"
         iconColor={theme.colors.caution}
         onPress={() => navigation.navigate('Analyze', { initialCategory: 'sms' })}
+        badgeText="SMS Shield"
       />
 
-      <QuickActionButton
-        title="Verify Phishing Link"
-        description="Check suspicious web URLs in messages before clicking"
+      <AnalyzerCard
+        mode="upi_vpa"
+        title="Check UPI ID"
+        subtitle="Verify recipient VPA handle before sending money"
+        iconName="at-circle-outline"
+        iconColor={theme.colors.primary}
+        onPress={() => navigation.navigate('Analyze', { initialCategory: 'upi_vpa' })}
+        badgeText="VPA Check"
+      />
+
+      <AnalyzerCard
+        mode="url"
+        title="Check URL"
+        subtitle="Inspect web link for phishing domains & typosquatting"
         iconName="link-outline"
         iconColor={theme.colors.secondary}
         onPress={() => navigation.navigate('Analyze', { initialCategory: 'url' })}
       />
 
-      <QuickActionButton
-        title="Payment Proof Screenshot"
-        description="Analyze payment screenshots for font/UTR alterations"
+      <AnalyzerCard
+        mode="screenshot"
+        title="Analyze Screenshot"
+        subtitle="Detect altered font metrics on fake GPay/Paytm proof"
         iconName="qr-code-outline"
         iconColor={theme.colors.accent}
         onPress={() => navigation.navigate('Analyze', { initialCategory: 'screenshot' })}
       />
 
-      {/* Recent Scans */}
-      <View style={styles.recentHeader}>
+      {/* 4. Recent Scans section */}
+      <View style={styles.recentRow}>
         <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3, marginBottom: 0 }]}>
-          Recent Activity
+          Recent Scans
         </Text>
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Text style={[styles.seeAllText, { color: theme.colors.primary, ...theme.typography.subtitle2 }]}>
-            View All
+            View All ({recentScans.length})
           </Text>
         </TouchableOpacity>
       </View>
 
-      {recentScans.map((item) => (
-        <Card key={item.id} style={styles.recentItem}>
-          <View style={styles.recentRow}>
-            <View style={{ flex: 1 }}>
-              <Text
-                style={[styles.recentInput, { color: theme.colors.textPrimary, ...theme.typography.subtitle2 }]}
-                numberOfLines={1}
-              >
-                {item.targetInput}
-              </Text>
-              <Text style={[styles.recentTime, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
-                {formatTimestamp(item.timestamp)} • {item.category.toUpperCase()}
-              </Text>
+      {recentScans.length === 0 ? (
+        <Card style={styles.emptyCard}>
+          <Text style={{ color: theme.colors.textMuted, textAlign: 'center' }}>No recent audit records.</Text>
+        </Card>
+      ) : (
+        recentScans.map((scan) => (
+          <ScanHistoryCard
+            key={scan.id}
+            scanResult={scan}
+            onPress={() => navigation.navigate('History')}
+          />
+        ))
+      )}
+
+      {/* 5. Safety Tips section */}
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+          Essential Safety Tips
+        </Text>
+      </View>
+
+      {SAFETY_TIPS.map((item) => (
+        <Card key={item.id} style={styles.tipCard}>
+          <View style={styles.tipHeader}>
+            <View style={[styles.tipIconBox, { backgroundColor: `${theme.colors.primary}1A` }]}>
+              <Ionicons name={item.iconName} size={20} color={theme.colors.primary} />
             </View>
-            <Badge level={item.riskLevel} size="small" />
+            <View style={{ flex: 1 }}>
+              <View style={styles.tipTitleRow}>
+                <Text style={[styles.tipTitle, { color: theme.colors.textPrimary }]}>{item.title}</Text>
+                <View style={[styles.tipBadge, { backgroundColor: `${theme.colors.danger}20` }]}>
+                  <Text style={[styles.tipBadgeText, { color: theme.colors.danger }]}>{item.badge}</Text>
+                </View>
+              </View>
+              <Text style={[styles.tipText, { color: theme.colors.textSecondary }]}>{item.tip}</Text>
+            </View>
           </View>
         </Card>
       ))}
 
-      {/* Cyber Crime Helpline Widget */}
+      {/* Cyber Crime Emergency Banner */}
       <TouchableOpacity style={styles.helplineBanner} onPress={handleHelplineCall} activeOpacity={0.85}>
         <View style={styles.helplineLeft}>
           <Ionicons name="call" size={24} color="#FFFFFF" />
           <View style={{ marginLeft: 12 }}>
-            <Text style={styles.helplineTitle}>Cyber Financial Fraud Helpline</Text>
-            <Text style={styles.helplineSub}>Dial 1930 instantly to freeze stolen funds</Text>
+            <Text style={styles.helplineTitle}>National Cyber Helpline 1930</Text>
+            <Text style={styles.helplineSub}>Report financial fraud immediately to freeze stolen funds</Text>
           </View>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
@@ -211,137 +210,69 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    marginBottom: 8,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  appName: {
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  liveShield: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginLeft: 10,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 4,
-  },
-  liveText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  welcomeSub: {
-    marginTop: 2,
-  },
-  bellBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  healthCard: {
-    marginBottom: 16,
-  },
-  healthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  shieldBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(14, 165, 233, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  healthTitle: {
-    fontWeight: '800',
-  },
-  healthSub: {
-    marginTop: 2,
-  },
-  healthDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    marginVertical: 14,
-  },
-  healthFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  healthStatItem: {
-    alignItems: 'center',
-  },
-  healthStatVal: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  healthStatLbl: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    marginBottom: 20,
+  sectionHeader: {
+    marginTop: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontWeight: '800',
-    marginBottom: 12,
     letterSpacing: -0.3,
   },
-  recentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  seeAllText: {
-    fontWeight: '700',
-  },
-  recentItem: {
-    marginBottom: 8,
-    padding: 12,
+  sectionSub: {
+    marginTop: 2,
   },
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 14,
+    marginBottom: 10,
   },
-  recentInput: {
-    fontWeight: '600',
+  seeAllText: {
+    fontWeight: '700',
   },
-  recentTime: {
-    marginTop: 3,
+  emptyCard: {
+    padding: 16,
+    marginBottom: 10,
+  },
+  tipCard: {
+    marginBottom: 10,
+    padding: 14,
+  },
+  tipHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  tipIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  tipTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  tipTitle: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  tipBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  tipBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  tipText: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 17,
   },
   helplineBanner: {
     backgroundColor: '#DC2626',
@@ -350,8 +281,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 14,
+    marginBottom: 12,
     shadowColor: '#DC2626',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,

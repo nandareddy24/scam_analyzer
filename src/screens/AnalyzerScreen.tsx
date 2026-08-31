@@ -12,12 +12,13 @@ import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
 import { ScamCategory, ScanResultData } from '../types/scam.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
-import { Header } from '../components/Header';
+import { AppHeader } from '../components/AppHeader';
 import { Input } from '../components/Input';
-import { Button } from '../components/Button';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { Card } from '../components/Card';
-import { Badge } from '../components/Badge';
+import { RiskBadge } from '../components/RiskBadge';
 import { RiskIndicator } from '../components/RiskIndicator';
+import { ErrorView } from '../components/ErrorView';
 import { useScamAnalyzer } from '../hooks/useScamAnalyzer';
 import { useTheme } from '../hooks/useTheme';
 import { getCategoryLabel } from '../utils/formatters';
@@ -25,11 +26,6 @@ import { getCategoryLabel } from '../utils/formatters';
 type Props = BottomTabScreenProps<MainTabParamList, 'Analyze'>;
 
 const PRESETS = {
-  upi_vpa: [
-    { label: 'Fake Refund VPA', value: 'paytm-refund-desk@okaxis' },
-    { label: 'Legit Merchant', value: 'merchant.zomato@icici' },
-    { label: 'Suspicious Phone VPA', value: '9876543210.lottery@ybl' },
-  ],
   sms: [
     {
       label: 'PIN Credit Trap',
@@ -44,18 +40,30 @@ const PRESETS = {
       value: '123456 is your secret OTP for login to SBI YONO. Do not share with anyone.',
     },
   ],
+  upi_vpa: [
+    { label: 'Fake Refund VPA', value: 'paytm-refund-desk@okaxis' },
+    { label: 'Legit Merchant', value: 'merchant.zomato@icici' },
+    { label: 'Suspicious Phone VPA', value: '9876543210.lottery@ybl' },
+  ],
   url: [
     { label: 'Phishing Domain', value: 'http://sbi-reward-points.top/claim' },
     { label: 'Typosquatted Portal', value: 'https://electricity-bill-update-desk.site' },
     { label: 'Official Site', value: 'https://cybercrime.gov.in' },
   ],
   screenshot: [
-    { label: 'Sample Fake Paytm Receipt', value: 'fake_paytm_txn_receipt_5000.png' },
-    { label: 'Sample Authentic Receipt', value: 'authentic_gpay_receipt_150.jpg' },
+    { label: 'Fake Paytm Receipt', value: 'fake_paytm_txn_receipt_5000.png' },
+    { label: 'Authentic GPay Receipt', value: 'authentic_gpay_receipt_150.jpg' },
   ],
 };
 
-export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
+const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'sms', label: 'SMS / Message', icon: 'chatbox-ellipses-outline' },
+  { key: 'upi_vpa', label: 'UPI ID', icon: 'at-circle-outline' },
+  { key: 'url', label: 'URL', icon: 'link-outline' },
+  { key: 'screenshot', label: 'Screenshot', icon: 'qr-code-outline' },
+];
+
+export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const theme = useTheme();
   const { isAnalyzing, activeCategory, setActiveCategory, analyze, error, clearError } = useScamAnalyzer();
 
@@ -89,38 +97,32 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
 
   return (
     <ScreenWrapper scrollable>
-      <Header
+      {/* App Header */}
+      <AppHeader
         title="AI Scam Analyzer"
         subtitle="Multi-modal threat detector & heuristic analysis"
+        onNotificationPress={() => navigation.navigate('Settings')}
       />
 
-      {/* Category Tabs */}
+      {/* 4 Mode Selector Tabs */}
       <View style={styles.tabContainer}>
-        {(['upi_vpa', 'sms', 'url', 'screenshot'] as ScamCategory[]).map((cat) => {
-          const isActive = activeCategory === cat;
+        {MODE_TABS.map((tab) => {
+          const isActive = activeCategory === tab.key;
           return (
             <TouchableOpacity
-              key={cat}
+              key={tab.key}
               style={[
                 styles.tabItem,
                 {
                   backgroundColor: isActive ? theme.colors.primary : theme.colors.cardBackground,
-                  borderColor: isActive ? theme.colors.primaryLight : theme.colors.border,
+                  borderColor: isActive ? theme.colors.primaryLight : theme.colors.cardBorder,
                 },
               ]}
-              onPress={() => handleTabChange(cat)}
+              onPress={() => handleTabChange(tab.key)}
               activeOpacity={0.8}
             >
               <Ionicons
-                name={
-                  cat === 'upi_vpa'
-                    ? 'at-circle-outline'
-                    : cat === 'sms'
-                    ? 'chatbox-ellipses-outline'
-                    : cat === 'url'
-                    ? 'link-outline'
-                    : 'qr-code-outline'
-                }
+                name={tab.icon}
                 size={16}
                 color={isActive ? '#0B1120' : theme.colors.textSecondary}
               />
@@ -129,64 +131,89 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                   styles.tabText,
                   {
                     color: isActive ? '#0B1120' : theme.colors.textSecondary,
-                    fontWeight: isActive ? '700' : '500',
+                    fontWeight: isActive ? '800' : '500',
                   },
                 ]}
+                numberOfLines={1}
               >
-                {cat === 'upi_vpa' ? 'UPI VPA' : cat === 'sms' ? 'SMS' : cat === 'url' ? 'Link' : 'Screenshot'}
+                {tab.label}
               </Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* Main Input Form */}
+      {/* Main Analysis Form Card */}
       <Card style={styles.formCard}>
         <View style={styles.formHeader}>
-          <Ionicons name="shield-search" size={24} color={theme.colors.primary} />
-          <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-            {getCategoryLabel(activeCategory)} Inspection
-          </Text>
+          <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.primary}1A` }]}>
+            <Ionicons
+              name={
+                activeCategory === 'sms'
+                  ? 'chatbox-outline'
+                  : activeCategory === 'upi_vpa'
+                  ? 'at-outline'
+                  : activeCategory === 'url'
+                  ? 'globe-outline'
+                  : 'image-outline'
+              }
+              size={22}
+              color={theme.colors.primary}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+              {getCategoryLabel(activeCategory)} Scanner
+            </Text>
+            <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+              {activeCategory === 'sms'
+                ? 'Check for PIN credit lures and fake bank rewards'
+                : activeCategory === 'upi_vpa'
+                ? 'Check VPA handle against pattern rules & scam database'
+                : activeCategory === 'url'
+                ? 'Check domain age, SSL status, and typosquatting'
+                : 'Extract receipt raster metrics to detect fake app screenshots'}
+            </Text>
+          </View>
         </View>
 
-        {activeCategory === 'upi_vpa' && (
-          <Input
-            label="Enter Recipient UPI ID / VPA"
-            placeholder="e.g. merchant@upi or refund-desk@okaxis"
-            value={inputVal}
-            onChangeText={setInputVal}
-            iconName="at-outline"
-            onClear={() => setInputVal('')}
-            error={error}
-            helperText="Check handles before scanning QR codes or clicking payment links"
-          />
-        )}
+        {error && <ErrorView message={error} onRetry={clearError} />}
 
         {activeCategory === 'sms' && (
           <Input
-            label="Paste Suspicious SMS Message Text"
+            label="Paste SMS / Message Text"
             placeholder="Paste SMS content received on phone..."
             value={inputVal}
             onChangeText={setInputVal}
-            iconName="chatbox-text-outline"
+            iconName="chatbox-outline"
             multiline
             numberOfLines={4}
             containerStyle={{ height: 'auto' }}
             onClear={() => setInputVal('')}
-            error={error}
             helperText="Detects PIN traps, urgent utility threats, and fake bank rewards"
+          />
+        )}
+
+        {activeCategory === 'upi_vpa' && (
+          <Input
+            label="Enter UPI ID / VPA Handle"
+            placeholder="e.g. paytm-refund-desk@okaxis or merchant@icici"
+            value={inputVal}
+            onChangeText={setInputVal}
+            iconName="at-outline"
+            onClear={() => setInputVal('')}
+            helperText="Check handles before confirming payment collect requests"
           />
         )}
 
         {activeCategory === 'url' && (
           <Input
-            label="Paste Web Link / URL"
+            label="Paste Website URL / Link"
             placeholder="e.g. http://sbi-reward-points.top/claim"
             value={inputVal}
             onChangeText={setInputVal}
             iconName="globe-outline"
             onClear={() => setInputVal('')}
-            error={error}
             helperText="Inspects domain SSL, typosquatting, and malicious top-level domains"
           />
         )}
@@ -205,7 +232,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
             >
               <Ionicons
                 name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
-                size={36}
+                size={40}
                 color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
               />
               <Text
@@ -217,21 +244,21 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                 {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
               </Text>
               <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
-                Supports PNG, JPG (Simulated OCR rasterization)
+                Supports PNG, JPG (Simulated OCR font metric inspection)
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Quick Presets */}
+        {/* Quick Sample Presets */}
         <Text style={[styles.presetHeader, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-          TRY SAMPLE TEST CASES:
+          TEST PRESETS:
         </Text>
         <View style={styles.presetsRow}>
           {PRESETS[activeCategory].map((p, idx) => (
             <TouchableOpacity
               key={idx}
-              style={[styles.presetChip, { backgroundColor: `${theme.colors.primary}18` }]}
+              style={[styles.presetChip, { backgroundColor: `${theme.colors.primary}18`, borderColor: `${theme.colors.primary}30` }]}
               onPress={() => {
                 if (activeCategory === 'screenshot') {
                   setSelectedScreenshot(p.value);
@@ -245,8 +272,8 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
           ))}
         </View>
 
-        <Button
-          title={isAnalyzing ? 'Running AI Detection Model...' : 'Analyze Threat Level'}
+        <PrimaryButton
+          title={isAnalyzing ? 'Analyzing Security Indicators...' : 'Run Security Audit'}
           onPress={handleRunAnalysis}
           variant="cyber"
           loading={isAnalyzing}
@@ -286,13 +313,13 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                   </Text>
                 </Card>
 
-                {/* Threat Factors */}
+                {/* Threat Factors List */}
                 <Text style={[styles.factorHeader, { color: theme.colors.textPrimary, ...theme.typography.subtitle1 }]}>
                   Detected Risk Indicators ({activeResult.threatFactors.length})
                 </Text>
 
                 {activeResult.threatFactors.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginVertical: 8 }}>
+                  <Text style={{ color: theme.colors.safe, marginVertical: 8, fontSize: 13 }}>
                     ✓ No anomalous keywords, fraudulent structures, or domain traps detected.
                   </Text>
                 ) : (
@@ -300,7 +327,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                     <View key={tf.id} style={[styles.factorItem, { backgroundColor: theme.colors.cardBackground }]}>
                       <View style={styles.factorTop}>
                         <Text style={[styles.factorName, { color: theme.colors.textPrimary }]}>{tf.name}</Text>
-                        <Badge
+                        <RiskBadge
                           level={tf.severity === 'critical' ? 'critical' : tf.severity === 'high' ? 'high_risk' : 'caution'}
                           customText={tf.severity.toUpperCase()}
                           size="small"
@@ -313,9 +340,9 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                   ))
                 )}
 
-                {/* Recommended Action */}
+                {/* Recommended Guidance */}
                 <View style={[styles.actionBox, { backgroundColor: `${theme.colors.primary}12`, borderColor: `${theme.colors.primary}40` }]}>
-                  <Ionicons name="shield-alert-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                  <Ionicons name="shield-half-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.actionTitle, { color: theme.colors.primary }]}>RECOMMENDED SAFETY ACTION</Text>
                     <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>
@@ -324,8 +351,8 @@ export const AnalyzerScreen: React.FC<Props> = ({ route }) => {
                   </View>
                 </View>
 
-                <Button
-                  title="Close Report"
+                <PrimaryButton
+                  title="Close Assessment"
                   onPress={() => setActiveResult(null)}
                   variant="secondary"
                   style={{ marginTop: 16 }}
@@ -351,12 +378,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 10,
-    marginHorizontal: 3,
+    marginHorizontal: 2,
     borderWidth: 1,
   },
   tabText: {
-    fontSize: 11,
-    marginLeft: 4,
+    fontSize: 10,
+    marginLeft: 3,
   },
   formCard: {
     padding: 16,
@@ -366,9 +393,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  modeIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
   formTitle: {
-    marginLeft: 10,
     fontWeight: '800',
+  },
+  formSub: {
+    marginTop: 1,
   },
   uploadArea: {
     marginBottom: 16,
@@ -382,7 +419,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   uploadTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     marginTop: 8,
     textAlign: 'center',
@@ -392,8 +429,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   presetHeader: {
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
     marginTop: 8,
     marginBottom: 6,
   },
@@ -406,12 +443,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
+    borderWidth: 1,
     marginRight: 6,
     marginBottom: 6,
   },
   presetText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,

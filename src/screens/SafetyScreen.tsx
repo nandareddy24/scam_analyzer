@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   Linking,
   Alert,
 } from 'react-native';
@@ -12,9 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
-import { Header } from '../components/Header';
+import { AppHeader } from '../components/AppHeader';
 import { Card } from '../components/Card';
-import { Button } from '../components/Button';
 import { useTheme } from '../hooks/useTheme';
 import { APP_CONFIG } from '../constants/config';
 
@@ -68,7 +66,7 @@ const FRAUD_PATTERNS: ScamPattern[] = [
   },
 ];
 
-export const SafetyScreen: React.FC<Props> = () => {
+export const SafetyScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useTheme();
   const [expandedId, setExpandedId] = useState<string | null>('pattern_1');
 
@@ -89,16 +87,17 @@ export const SafetyScreen: React.FC<Props> = () => {
 
   return (
     <ScreenWrapper scrollable>
-      <Header
+      <AppHeader
         title="UPI Safety Hub"
         subtitle="Cyber crime prevention guide & emergency response"
+        onNotificationPress={() => navigation.navigate('Settings')}
       />
 
       {/* Emergency Response Card */}
       <Card style={styles.emergencyCard}>
         <View style={styles.emergencyRow}>
           <View style={[styles.emergencyIconBox, { backgroundColor: '#DC2626' }]}>
-            <Ionicons name="shield-alert" size={28} color="#FFFFFF" />
+            <Ionicons name="warning-outline" size={28} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.emergencyTitle}>Reported Financial Fraud?</Text>
