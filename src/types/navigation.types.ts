@@ -15,5 +15,7 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   ScanDetails: { scanResult: ScanResultData };
   ReportHelp: undefined;
+  About: undefined;
 };
+
 

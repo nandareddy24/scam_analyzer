@@ -6,8 +6,8 @@ import { SplashScreen } from '../screens/SplashScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { BottomTabNavigator } from './BottomTabNavigator';
 import { useTheme } from '../hooks/useTheme';
-
 import { ReportHelpScreen } from '../screens/ReportHelpScreen';
+import { AboutScreen } from '../screens/AboutScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -39,6 +39,7 @@ export const RootNavigator: React.FC = () => {
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
         <Stack.Screen name="ReportHelp" component={ReportHelpScreen} />
+        <Stack.Screen name="About" component={AboutScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
