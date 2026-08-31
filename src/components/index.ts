@@ -16,3 +16,4 @@ export * from './QuickActionButton';
 export * from './RiskIndicator';
 export * from './ScreenWrapper';
 export * from './StatCard';
+export * from './AnalysisResultModal';

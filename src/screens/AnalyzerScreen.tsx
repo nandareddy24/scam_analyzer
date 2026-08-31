@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  Modal,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,13 +20,12 @@ import { AppHeader } from '../components/AppHeader';
 import { Input } from '../components/Input';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { Card } from '../components/Card';
-import { RiskBadge } from '../components/RiskBadge';
-import { RiskIndicator } from '../components/RiskIndicator';
 import { ErrorView } from '../components/ErrorView';
+import { AnalysisResultModal, AnalysisResultData } from '../components/AnalysisResultModal';
 import { smsAnalyzer } from '../services/smsAnalyzer';
 import { upiAnalyzer } from '../services/upiAnalyzer';
 import { urlAnalyzer } from '../services/urlAnalyzer';
-import { screenshotAnalyzer, MANDATORY_SCREENSHOT_DISCLAIMER } from '../services/screenshotAnalyzer';
+import { screenshotAnalyzer } from '../services/screenshotAnalyzer';
 import { useTheme } from '../hooks/useTheme';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Analyze'>;
@@ -97,26 +95,15 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const [activeCategory, setActiveCategory] = useState<ScamCategory>('sms');
   const [inputVal, setInputVal] = useState('');
 
-  // Dedicated SMS Analyzer States
-  const [isSMSAnalyzing, setIsSMSAnalyzing] = useState(false);
-  const [smsResult, setSMSResult] = useState<SMSAnalysisResult | null>(null);
-  const [smsError, setSMSError] = useState<string | null>(null);
+  // Unified Result Modal State
+  const [activeResult, setActiveResult] = useState<AnalysisResultData | null>(null);
 
-  // Dedicated UPI ID Analyzer States
-  const [isUPIAnalyzing, setIsUPIAnalyzing] = useState(false);
-  const [upiResult, setUPIResult] = useState<UPIAnalysisResult | null>(null);
-  const [upiError, setUPIError] = useState<string | null>(null);
+  // Analyzer Loading & Error States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Dedicated URL Analyzer States
-  const [isURLAnalyzing, setIsURLAnalyzing] = useState(false);
-  const [urlResult, setURLResult] = useState<URLAnalysisResult | null>(null);
-  const [urlError, setURLError] = useState<string | null>(null);
-
-  // Dedicated Screenshot Analyzer States
+  // Dedicated Screenshot State
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
-  const [isScreenshotAnalyzing, setIsScreenshotAnalyzing] = useState(false);
-  const [screenshotResult, setScreenshotResult] = useState<ScreenshotAnalysisResult | null>(null);
-  const [screenshotError, setScreenshotError] = useState<string | null>(null);
 
   useEffect(() => {
     if (route.params?.initialCategory) {
@@ -131,62 +118,122 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setActiveCategory(cat);
     setInputVal('');
     setSelectedScreenshot(null);
-    setSMSError(null);
-    setUPIError(null);
-    setURLError(null);
-    setScreenshotError(null);
+    setErrorMsg(null);
+    setActiveResult(null);
   };
 
   const handleAnalyzeSMS = async () => {
-    setSMSError(null);
-    setIsSMSAnalyzing(true);
+    setErrorMsg(null);
+    setIsAnalyzing(true);
     try {
-      const result = await smsAnalyzer.analyzeSMS({ messageText: inputVal });
-      setSMSResult(result);
+      const res: SMSAnalysisResult = await smsAnalyzer.analyzeSMS({ messageText: inputVal });
+      setActiveResult({
+        id: res.id,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: res.scamCategory,
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        redFlags: res.detectedRedFlags,
+        recommendedActions: res.recommendedActions,
+      });
     } catch (err: any) {
-      setSMSError(err.message || 'Failed to analyze SMS message');
+      setErrorMsg(err.message || 'Failed to analyze SMS content');
     } finally {
-      setIsSMSAnalyzing(false);
+      setIsAnalyzing(false);
     }
   };
 
   const handleAnalyzeUPI = async () => {
-    setUPIError(null);
-    setIsUPIAnalyzing(true);
+    setErrorMsg(null);
+    setIsAnalyzing(true);
     try {
-      const result = await upiAnalyzer.analyzeUPI({ upiId: inputVal });
-      setUPIResult(result);
+      const res: UPIAnalysisResult = await upiAnalyzer.analyzeUPI({ upiId: inputVal });
+      setActiveResult({
+        id: res.id,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'UPI VPA Handle',
+        confidencePercentage: res.confidencePercentage || 92,
+        explanation: res.explanation,
+        redFlags: res.suspiciousIndicators.map((ind, idx) => ({
+          id: `upi_flag_${idx}`,
+          title: 'VPA Handle Anomaly',
+          description: ind,
+          severity: 'high',
+        })),
+        recommendedActions: [res.recommendedAction],
+        extractedMetrics: {
+          'Target UPI VPA': res.upiId,
+          'Format Syntax Status': res.formatValidationMessage,
+        },
+      });
     } catch (err: any) {
-      setUPIError(err.message || 'Failed to analyze UPI ID');
+      setErrorMsg(err.message || 'Failed to analyze UPI ID');
     } finally {
-      setIsUPIAnalyzing(false);
+      setIsAnalyzing(false);
     }
   };
 
   const handleAnalyzeURL = async () => {
-    setURLError(null);
-    setIsURLAnalyzing(true);
+    setErrorMsg(null);
+    setIsAnalyzing(true);
     try {
-      const result = await urlAnalyzer.analyzeURL({ url: inputVal });
-      setURLResult(result);
+      const res: URLAnalysisResult = await urlAnalyzer.analyzeURL({ url: inputVal });
+      setActiveResult({
+        id: res.id,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'Web Link Phishing',
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        redFlags: res.detectedIndicators,
+        recommendedActions: [res.recommendation],
+        extractedMetrics: {
+          'Analyzed URL': res.url,
+          'Domain Host': res.domain,
+          'SSL Encryption': res.hasSSL ? '✓ HTTPS Encrypted' : '❌ Unencrypted (HTTP)',
+        },
+      });
     } catch (err: any) {
-      setURLError(err.message || 'Failed to analyze URL');
+      setErrorMsg(err.message || 'Failed to analyze URL link');
     } finally {
-      setIsURLAnalyzing(false);
+      setIsAnalyzing(false);
     }
   };
 
   const handleAnalyzeScreenshot = async () => {
-    setScreenshotError(null);
-    setIsScreenshotAnalyzing(true);
+    setErrorMsg(null);
+    setIsAnalyzing(true);
     try {
       const targetUri = selectedScreenshot || 'fake_paytm_txn_receipt_5000.png';
-      const result = await screenshotAnalyzer.analyzeScreenshot({ imageUri: targetUri });
-      setScreenshotResult(result);
+      const res: ScreenshotAnalysisResult = await screenshotAnalyzer.analyzeScreenshot({ imageUri: targetUri });
+      setActiveResult({
+        id: res.id,
+        verdict: res.verdict as any,
+        riskScore: res.riskScore,
+        riskLevel: res.riskLevel as any,
+        category: 'Payment Proof Receipt',
+        confidencePercentage: res.confidencePercentage,
+        explanation: res.explanation,
+        redFlags: res.suspiciousIndicators,
+        recommendedActions: [res.recommendation],
+        disclaimer: res.disclaimer,
+        extractedMetrics: {
+          'Amount': res.extractedData.transactionAmount || 'N/A',
+          'UTR / Ref #': res.extractedData.utrReferenceNumber || 'N/A',
+          'Payee Name': res.extractedData.receiverPayeeName || 'N/A',
+          'Payment App': res.extractedData.detectedPaymentApp || 'N/A',
+          'Timestamp': res.extractedData.detectedTimestamp || 'N/A',
+        },
+      });
     } catch (err: any) {
-      setScreenshotError(err.message || 'Failed to analyze payment screenshot');
+      setErrorMsg(err.message || 'Failed to analyze payment screenshot');
     } finally {
-      setIsScreenshotAnalyzing(false);
+      setIsAnalyzing(false);
     }
   };
 
@@ -274,7 +321,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
 
-          {smsError && <ErrorView message={smsError} onRetry={() => setSMSError(null)} />}
+          {errorMsg && <ErrorView message={errorMsg} onRetry={() => setErrorMsg(null)} />}
 
           <Input
             label="Paste suspicious SMS or WhatsApp message"
@@ -319,10 +366,10 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           </ScrollView>
 
           <PrimaryButton
-            title={isSMSAnalyzing ? 'Analyzing SMS Content...' : 'Analyze SMS Threat Level'}
+            title={isAnalyzing ? 'Analyzing SMS Content...' : 'Analyze SMS Threat Level'}
             onPress={handleAnalyzeSMS}
             variant="cyber"
-            loading={isSMSAnalyzing}
+            loading={isAnalyzing}
             style={{ marginTop: 16 }}
             icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
           />
@@ -346,7 +393,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
 
-          {upiError && <ErrorView message={upiError} onRetry={() => setUPIError(null)} />}
+          {errorMsg && <ErrorView message={errorMsg} onRetry={() => setErrorMsg(null)} />}
 
           <Input
             label="Enter Recipient UPI ID (VPA)"
@@ -374,10 +421,10 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           <PrimaryButton
-            title={isUPIAnalyzing ? 'Analyzing UPI Handle...' : 'Analyze UPI ID Threat Level'}
+            title={isAnalyzing ? 'Analyzing UPI Handle...' : 'Analyze UPI ID Threat Level'}
             onPress={handleAnalyzeUPI}
             variant="cyber"
-            loading={isUPIAnalyzing}
+            loading={isAnalyzing}
             style={{ marginTop: 16 }}
             icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
           />
@@ -401,7 +448,7 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
 
-          {urlError && <ErrorView message={urlError} onRetry={() => setURLError(null)} />}
+          {errorMsg && <ErrorView message={errorMsg} onRetry={() => setErrorMsg(null)} />}
 
           <View style={styles.inputWithPasteRow}>
             <View style={{ flex: 1 }}>
@@ -444,10 +491,10 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           <PrimaryButton
-            title={isURLAnalyzing ? 'Analyzing Web Link...' : 'Analyze URL Threat Level'}
+            title={isAnalyzing ? 'Analyzing Web Link...' : 'Analyze URL Threat Level'}
             onPress={handleAnalyzeURL}
             variant="cyber"
-            loading={isURLAnalyzing}
+            loading={isAnalyzing}
             style={{ marginTop: 16 }}
             icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
           />
@@ -471,9 +518,8 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
             </View>
           </View>
 
-          {screenshotError && <ErrorView message={screenshotError} onRetry={() => setScreenshotError(null)} />}
+          {errorMsg && <ErrorView message={errorMsg} onRetry={() => setErrorMsg(null)} />}
 
-          {/* Image Selection / Dropzone Container */}
           <View style={styles.uploadArea}>
             {selectedScreenshot ? (
               <View style={[styles.imagePreviewBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.primary }]}>
@@ -546,604 +592,22 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
 
           <PrimaryButton
-            title={isScreenshotAnalyzing ? 'Running OCR & Font Analysis...' : 'Analyze Payment Proof'}
+            title={isAnalyzing ? 'Running OCR & Font Analysis...' : 'Analyze Payment Proof'}
             onPress={handleAnalyzeScreenshot}
             variant="cyber"
-            loading={isScreenshotAnalyzing}
+            loading={isAnalyzing}
             style={{ marginTop: 16 }}
             icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
           />
         </Card>
       )}
 
-      {/* SMS RESULT MODAL */}
-      <Modal
-        visible={!!smsResult}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setSMSResult(null)}
-      >
-        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                SMS Scam Assessment
-              </Text>
-              <TouchableOpacity onPress={() => setSMSResult(null)} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {smsResult && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <View
-                  style={[
-                    styles.verdictBanner,
-                    {
-                      backgroundColor:
-                        smsResult.verdict === 'SCAM'
-                          ? 'rgba(220, 38, 38, 0.18)'
-                          : smsResult.verdict === 'SUSPICIOUS'
-                          ? 'rgba(245, 158, 11, 0.18)'
-                          : 'rgba(16, 185, 129, 0.18)',
-                      borderColor:
-                        smsResult.verdict === 'SCAM'
-                          ? theme.colors.danger
-                          : smsResult.verdict === 'SUSPICIOUS'
-                          ? theme.colors.caution
-                          : theme.colors.safe,
-                    },
-                  ]}
-                >
-                  <View style={styles.verdictLeft}>
-                    <Text style={styles.verdictLabelText}>VERDICT</Text>
-                    <Text
-                      style={[
-                        styles.verdictValueText,
-                        {
-                          color:
-                            smsResult.verdict === 'SCAM'
-                              ? theme.colors.danger
-                              : smsResult.verdict === 'SUSPICIOUS'
-                              ? theme.colors.caution
-                              : theme.colors.safe,
-                        },
-                      ]}
-                    >
-                      {smsResult.verdict}
-                    </Text>
-                  </View>
-
-                  <View style={styles.confidencePill}>
-                    <Ionicons name="analytics" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
-                    <Text style={[styles.confidenceText, { color: theme.colors.primary }]}>
-                      {smsResult.confidencePercentage}% Confidence
-                    </Text>
-                  </View>
-                </View>
-
-                <RiskIndicator
-                  score={smsResult.riskScore}
-                  level={
-                    smsResult.riskLevel === 'CRITICAL'
-                      ? 'critical'
-                      : smsResult.riskLevel === 'HIGH'
-                      ? 'high_risk'
-                      : smsResult.riskLevel === 'MEDIUM'
-                      ? 'caution'
-                      : 'safe'
-                  }
-                />
-
-                <Card variant="bordered" style={styles.metaBadgeCard}>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Scam Category</Text>
-                    <View style={[styles.categoryBadgePill, { backgroundColor: `${theme.colors.primary}20` }]}>
-                      <Text style={[styles.categoryBadgeText, { color: theme.colors.primary }]}>
-                        {smsResult.scamCategory}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Risk Level</Text>
-                    <RiskBadge
-                      level={
-                        smsResult.riskLevel === 'CRITICAL'
-                          ? 'critical'
-                          : smsResult.riskLevel === 'HIGH'
-                          ? 'high_risk'
-                          : smsResult.riskLevel === 'MEDIUM'
-                          ? 'caution'
-                          : 'safe'
-                      }
-                      customText={smsResult.riskLevel}
-                      size="small"
-                    />
-                  </View>
-                </Card>
-
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
-                    AI Analysis Explanation
-                  </Text>
-                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
-                    {smsResult.explanation}
-                  </Text>
-                </Card>
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 8 }]}>
-                  Detected Red Flags ({smsResult.detectedRedFlags.length})
-                </Text>
-
-                {smsResult.detectedRedFlags.map((flag) => (
-                  <View key={flag.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
-                    <View style={styles.flagTop}>
-                      <Ionicons name="alert-circle" size={16} color={theme.colors.danger} style={{ marginRight: 6 }} />
-                      <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{flag.title}</Text>
-                      <RiskBadge
-                        level={flag.severity === 'critical' ? 'critical' : flag.severity === 'high' ? 'high_risk' : 'caution'}
-                        customText={flag.severity.toUpperCase()}
-                        size="small"
-                      />
-                    </View>
-                    <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
-                      {flag.description}
-                    </Text>
-                  </View>
-                ))}
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 8 }]}>
-                  Recommended Actions
-                </Text>
-                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
-                  {smsResult.recommendedActions.map((action, idx) => (
-                    <View key={idx} style={styles.actionItemRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.safe} style={{ marginRight: 8, marginTop: 2 }} />
-                      <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>{action}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <PrimaryButton
-                  title="Close Report"
-                  onPress={() => setSMSResult(null)}
-                  variant="secondary"
-                  style={{ marginTop: 16 }}
-                />
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* UPI ID RESULT MODAL */}
-      <Modal
-        visible={!!upiResult}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setUPIResult(null)}
-      >
-        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                UPI ID Threat Assessment Report
-              </Text>
-              <TouchableOpacity onPress={() => setUPIResult(null)} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {upiResult && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Target UPI ID (VPA)</Text>
-                  <Text style={[styles.upiIdTitleText, { color: theme.colors.primary }]}>{upiResult.upiId}</Text>
-                  <View style={styles.divider} />
-                  <View style={styles.formatValidationBox}>
-                    <Ionicons
-                      name={upiResult.isValidFormat ? 'checkmark-circle' : 'close-circle'}
-                      size={18}
-                      color={upiResult.isValidFormat ? theme.colors.safe : theme.colors.danger}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text
-                      style={[
-                        styles.formatValidationText,
-                        { color: upiResult.isValidFormat ? theme.colors.safe : theme.colors.danger },
-                      ]}
-                    >
-                      {upiResult.formatValidationMessage}
-                    </Text>
-                  </View>
-                </Card>
-
-                <RiskIndicator
-                  score={upiResult.riskScore}
-                  level={
-                    upiResult.riskLevel === 'CRITICAL'
-                      ? 'critical'
-                      : upiResult.riskLevel === 'HIGH'
-                      ? 'high_risk'
-                      : upiResult.riskLevel === 'MEDIUM'
-                      ? 'caution'
-                      : 'safe'
-                  }
-                />
-
-                <Card variant="bordered" style={styles.metaBadgeCard}>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Verdict Status</Text>
-                    <RiskBadge
-                      level={
-                        upiResult.riskLevel === 'CRITICAL'
-                          ? 'critical'
-                          : upiResult.riskLevel === 'HIGH'
-                          ? 'high_risk'
-                          : upiResult.riskLevel === 'MEDIUM'
-                          ? 'caution'
-                          : 'safe'
-                      }
-                      customText={upiResult.verdict}
-                    />
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Risk Level</Text>
-                    <Text style={[styles.metaValText, { color: theme.colors.textPrimary }]}>{upiResult.riskLevel}</Text>
-                  </View>
-                </Card>
-
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
-                    Risk Assessment Explanation
-                  </Text>
-                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
-                    {upiResult.explanation}
-                  </Text>
-                </Card>
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 6 }]}>
-                  Suspicious Indicators ({upiResult.suspiciousIndicators.length})
-                </Text>
-                {upiResult.suspiciousIndicators.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
-                    ✓ No suspicious handle indicators or keyword anomalies detected.
-                  </Text>
-                ) : (
-                  upiResult.suspiciousIndicators.map((ind, idx) => (
-                    <View key={idx} style={[styles.indicatorBox, { backgroundColor: theme.colors.cardBackground }]}>
-                      <Ionicons name="alert-circle" size={16} color={theme.colors.caution} style={{ marginRight: 8, marginTop: 2 }} />
-                      <Text style={[styles.indicatorText, { color: theme.colors.textPrimary }]}>{ind}</Text>
-                    </View>
-                  ))
-                )}
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
-                  Recommended Guidance
-                </Text>
-                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
-                  <View style={styles.actionItemRow}>
-                    <Ionicons name="shield-checkmark" size={16} color={theme.colors.primary} style={{ marginRight: 8, marginTop: 2 }} />
-                    <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>
-                      {upiResult.recommendedAction}
-                    </Text>
-                  </View>
-                </View>
-
-                <PrimaryButton
-                  title="Close UPI Assessment"
-                  onPress={() => setUPIResult(null)}
-                  variant="secondary"
-                  style={{ marginTop: 16 }}
-                />
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* URL RESULT MODAL */}
-      <Modal
-        visible={!!urlResult}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setURLResult(null)}
-      >
-        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                URL Phishing Assessment Report
-              </Text>
-              <TouchableOpacity onPress={() => setURLResult(null)} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {urlResult && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Analyzed Link (URL)</Text>
-                  <Text style={[styles.upiIdTitleText, { color: theme.colors.secondary }]} numberOfLines={2}>
-                    {urlResult.url}
-                  </Text>
-                  <View style={styles.divider} />
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Domain Host</Text>
-                    <Text style={[styles.metaValText, { color: theme.colors.textPrimary }]}>{urlResult.domain}</Text>
-                  </View>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>SSL Encryption</Text>
-                    <Text style={[styles.metaValText, { color: urlResult.hasSSL ? theme.colors.safe : theme.colors.danger }]}>
-                      {urlResult.hasSSL ? '✓ HTTPS Encrypted' : '❌ Unencrypted (HTTP)'}
-                    </Text>
-                  </View>
-                </Card>
-
-                <RiskIndicator
-                  score={urlResult.riskScore}
-                  level={
-                    urlResult.riskLevel === 'CRITICAL'
-                      ? 'critical'
-                      : urlResult.riskLevel === 'HIGH'
-                      ? 'high_risk'
-                      : urlResult.riskLevel === 'MEDIUM'
-                      ? 'caution'
-                      : 'safe'
-                  }
-                />
-
-                <Card variant="bordered" style={styles.metaBadgeCard}>
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Verdict Status</Text>
-                    <RiskBadge
-                      level={
-                        urlResult.riskLevel === 'CRITICAL'
-                          ? 'critical'
-                          : urlResult.riskLevel === 'HIGH'
-                          ? 'high_risk'
-                          : urlResult.riskLevel === 'MEDIUM'
-                          ? 'caution'
-                          : 'safe'
-                      }
-                      customText={urlResult.verdict.replace('_', ' ')}
-                    />
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Risk Level</Text>
-                    <Text style={[styles.metaValText, { color: theme.colors.textPrimary }]}>{urlResult.riskLevel}</Text>
-                  </View>
-                </Card>
-
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
-                    Risk Assessment Rating Explanation
-                  </Text>
-                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
-                    {urlResult.explanation}
-                  </Text>
-                </Card>
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 6 }]}>
-                  Detected Risk Indicators ({urlResult.detectedIndicators.length})
-                </Text>
-                {urlResult.detectedIndicators.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
-                    ✓ No suspicious domain indicators or typosquatting traps detected.
-                  </Text>
-                ) : (
-                  urlResult.detectedIndicators.map((ind) => (
-                    <View key={ind.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
-                      <View style={styles.flagTop}>
-                        <Ionicons name="globe" size={16} color={theme.colors.secondary} style={{ marginRight: 6 }} />
-                        <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{ind.title}</Text>
-                        <RiskBadge
-                          level={ind.severity === 'critical' ? 'critical' : ind.severity === 'high' ? 'high_risk' : 'caution'}
-                          customText={ind.severity.toUpperCase()}
-                          size="small"
-                        />
-                      </View>
-                      <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
-                        {ind.description}
-                      </Text>
-                    </View>
-                  ))
-                )}
-
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
-                  Recommended Guidance
-                </Text>
-                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
-                  <View style={styles.actionItemRow}>
-                    <Ionicons name="shield-checkmark" size={16} color={theme.colors.primary} style={{ marginRight: 8, marginTop: 2 }} />
-                    <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>
-                      {urlResult.recommendation}
-                    </Text>
-                  </View>
-                </View>
-
-                <PrimaryButton
-                  title="Close URL Assessment"
-                  onPress={() => setURLResult(null)}
-                  variant="secondary"
-                  style={{ marginTop: 16 }}
-                />
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* SCREENSHOT RESULT MODAL */}
-      <Modal
-        visible={!!screenshotResult}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setScreenshotResult(null)}
-      >
-        <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                Screenshot Proof Assessment Report
-              </Text>
-              <TouchableOpacity onPress={() => setScreenshotResult(null)} style={styles.closeBtn}>
-                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {screenshotResult && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Image Identifier */}
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Analyzed Screenshot Image</Text>
-                  <Text style={[styles.upiIdTitleText, { color: theme.colors.accent }]} numberOfLines={1}>
-                    {screenshotResult.imageUri}
-                  </Text>
-                </Card>
-
-                {/* Manipulation Warning Banner */}
-                {screenshotResult.manipulationWarning && (
-                  <View style={[styles.manipulationWarningBox, { backgroundColor: 'rgba(239, 68, 68, 0.18)', borderColor: theme.colors.danger }]}>
-                    <Ionicons name="warning" size={22} color={theme.colors.danger} style={{ marginRight: 10 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.manipulationTitle, { color: theme.colors.danger }]}>
-                        MANIPULATION / SPOOF WARNING DETECTED
-                      </Text>
-                      <Text style={[styles.manipulationSub, { color: theme.colors.textPrimary }]}>
-                        {screenshotResult.manipulationDetails || 'Font metric distortion detected.'}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Risk Meter */}
-                <RiskIndicator
-                  score={screenshotResult.riskScore}
-                  level={
-                    screenshotResult.riskLevel === 'CRITICAL'
-                      ? 'critical'
-                      : screenshotResult.riskLevel === 'HIGH'
-                      ? 'high_risk'
-                      : screenshotResult.riskLevel === 'MEDIUM'
-                      ? 'caution'
-                      : 'safe'
-                  }
-                />
-
-                {/* Extracted OCR Data Summary Grid */}
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 8 }]}>
-                  Extracted Receipt OCR Metrics
-                </Text>
-                <Card variant="bordered" style={styles.ocrGridCard}>
-                  <View style={styles.ocrGridRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Amount</Text>
-                    <Text style={[styles.ocrValHighlight, { color: theme.colors.primary }]}>
-                      {screenshotResult.extractedData.transactionAmount || 'N/A'}
-                    </Text>
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.ocrGridRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>UTR / Ref Number</Text>
-                    <Text style={[styles.ocrValText, { color: theme.colors.textPrimary }]}>
-                      {screenshotResult.extractedData.utrReferenceNumber || 'N/A'}
-                    </Text>
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.ocrGridRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Payee / Receiver</Text>
-                    <Text style={[styles.ocrValText, { color: theme.colors.textPrimary }]}>
-                      {screenshotResult.extractedData.receiverPayeeName || 'N/A'}
-                    </Text>
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.ocrGridRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Detected Payment App</Text>
-                    <Text style={[styles.ocrValText, { color: theme.colors.accent }]}>
-                      {screenshotResult.extractedData.detectedPaymentApp || 'N/A'}
-                    </Text>
-                  </View>
-                  <View style={styles.divider} />
-                  <View style={styles.ocrGridRow}>
-                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Detected Timestamp</Text>
-                    <Text style={[styles.ocrValText, { color: theme.colors.textMuted }]}>
-                      {screenshotResult.extractedData.detectedTimestamp || 'N/A'}
-                    </Text>
-                  </View>
-                </Card>
-
-                {/* Explanation */}
-                <Card variant="bordered" style={{ marginBottom: 12 }}>
-                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
-                    AI Analysis Explanation
-                  </Text>
-                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
-                    {screenshotResult.explanation}
-                  </Text>
-                </Card>
-
-                {/* Mandatory Disclaimer Box */}
-                <View style={[styles.disclaimerBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: theme.colors.caution }]}>
-                  <Ionicons name="information-circle-outline" size={20} color={theme.colors.caution} style={{ marginRight: 8 }} />
-                  <Text style={[styles.disclaimerText, { color: theme.colors.caution }]}>
-                    {screenshotResult.disclaimer}
-                  </Text>
-                </View>
-
-                {/* Suspicious Indicators */}
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 12, marginBottom: 6 }]}>
-                  Raster & Font Anomalies ({screenshotResult.suspiciousIndicators.length})
-                </Text>
-                {screenshotResult.suspiciousIndicators.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
-                    ✓ Receipt layout conforms to authentic banking receipt templates.
-                  </Text>
-                ) : (
-                  screenshotResult.suspiciousIndicators.map((ind) => (
-                    <View key={ind.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
-                      <View style={styles.flagTop}>
-                        <Ionicons name="image" size={16} color={theme.colors.danger} style={{ marginRight: 6 }} />
-                        <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{ind.title}</Text>
-                        <RiskBadge
-                          level={ind.severity === 'critical' ? 'critical' : ind.severity === 'high' ? 'high_risk' : 'caution'}
-                          customText={ind.severity.toUpperCase()}
-                          size="small"
-                        />
-                      </View>
-                      <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
-                        {ind.description}
-                      </Text>
-                    </View>
-                  ))
-                )}
-
-                {/* Recommendation */}
-                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 6 }]}>
-                  Recommended Guidance
-                </Text>
-                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
-                  <View style={styles.actionItemRow}>
-                    <Ionicons name="shield-checkmark" size={16} color={theme.colors.primary} style={{ marginRight: 8, marginTop: 2 }} />
-                    <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>
-                      {screenshotResult.recommendation}
-                    </Text>
-                  </View>
-                </View>
-
-                <PrimaryButton
-                  title="Close Screenshot Assessment"
-                  onPress={() => setScreenshotResult(null)}
-                  variant="secondary"
-                  style={{ marginTop: 16 }}
-                />
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* UNIFIED PROFESSIONAL ANALYSIS RESULT MODAL */}
+      <AnalysisResultModal
+        visible={!!activeResult}
+        onClose={() => setActiveResult(null)}
+        result={activeResult}
+      />
     </ScreenWrapper>
   );
 };
@@ -1326,216 +790,5 @@ const styles = StyleSheet.create({
   imageActionText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontWeight: '800',
-  },
-  closeBtn: {
-    padding: 4,
-  },
-  verdictBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  verdictLeft: {
-    flex: 1,
-  },
-  verdictLabelText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.8,
-  },
-  verdictValueText: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    marginTop: 2,
-  },
-  confidencePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: 'rgba(14, 165, 233, 0.15)',
-  },
-  confidenceText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  metaBadgeCard: {
-    marginBottom: 12,
-    padding: 12,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  metaLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  metaValText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  upiIdTitleText: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginVertical: 4,
-  },
-  formatValidationBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  formatValidationText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  manipulationWarningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  manipulationTitle: {
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  manipulationSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  ocrGridCard: {
-    padding: 12,
-    marginBottom: 12,
-  },
-  ocrGridRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  ocrValHighlight: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  ocrValText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  disclaimerBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  disclaimerText: {
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
-    flex: 1,
-  },
-  indicatorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 6,
-  },
-  indicatorText: {
-    fontSize: 12,
-    lineHeight: 16,
-    flex: 1,
-  },
-  categoryBadgePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  categoryBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    marginVertical: 6,
-  },
-  sectionHeading: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  explanationText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  flagItem: {
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-  },
-  flagTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  flagTitle: {
-    fontWeight: '700',
-    fontSize: 13,
-    flex: 1,
-    marginRight: 6,
-  },
-  flagDesc: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  actionListBox: {
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  actionItemRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  actionItemText: {
-    fontSize: 13,
-    lineHeight: 18,
-    flex: 1,
   },
 });
