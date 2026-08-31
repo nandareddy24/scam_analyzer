@@ -41,9 +41,12 @@ class ScreenshotAnalysisRequest(BaseModel):
     image_base64: Optional[str] = Field(
         None,
         description="Base64 encoded string of payment receipt screenshot",
+        max_length=15000000, # Approx 10MB binary limit
     )
     filename: Optional[str] = Field(
         None,
         description="Original screenshot filename (e.g. paytm_receipt_5000.png)",
+        max_length=255,
         examples=["fake_paytm_txn_receipt_5000.png"],
     )
+
