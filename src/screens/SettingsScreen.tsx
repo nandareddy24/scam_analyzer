@@ -19,7 +19,7 @@ import { APP_CONFIG } from '../constants/config';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Settings'>;
 
-export const SettingsScreen: React.FC<Props> = () => {
+export const SettingsScreen: React.FC<Props> = ({ navigation }) => {
   const theme = useTheme();
 
   const [realtimeSms, setRealtimeSms] = useState(true);
@@ -142,6 +142,33 @@ export const SettingsScreen: React.FC<Props> = () => {
             onValueChange={setThreatAlerts}
             thumbColor={threatAlerts ? theme.colors.primary : '#64748B'}
             trackColor={{ false: '#334155', true: 'rgba(14, 165, 233, 0.3)' }}
+          />
+        </View>
+      </Card>
+
+      {/* Emergency Fraud Assistance Action */}
+      <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3, marginTop: 16 }]}>
+        Emergency Cyber Assistance
+      </Text>
+
+      <Card style={styles.cardGroup} variant="danger">
+        <View style={styles.settingRow}>
+          <View style={styles.settingLeft}>
+            <Ionicons name="call" size={22} color={theme.colors.danger} style={styles.settingIcon} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingTitle, { color: theme.colors.danger }]}>
+                Report Fraud / Get Help (1930)
+              </Text>
+              <Text style={[styles.settingSub, { color: theme.colors.textSecondary }]}>
+                Access 1930 Helpline, Bank Numbers, Cyber Crime Portal & Recovery Plan
+              </Text>
+            </View>
+          </View>
+          <PrimaryButton
+            title="Open"
+            onPress={() => (navigation.getParent() as any)?.navigate('ReportHelp')}
+            variant="cyber"
+            style={{ width: 'auto', paddingHorizontal: 16, height: 36, backgroundColor: theme.colors.danger }}
           />
         </View>
       </Card>

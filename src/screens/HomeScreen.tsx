@@ -85,14 +85,41 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         onNotificationPress={() => navigation.navigate('Settings')}
       />
 
-      {/* 2. Security status card */}
+      {/* Protection Status Banner */}
       <SecurityStatusCard
         statusText="Protected"
         isProtected
-        lastScanTime="12m ago"
-        threatsBlockedCount={7}
+        lastScanTime="Just Now"
+        threatsBlockedCount={recentScans.length}
         onScanNowPress={() => navigation.navigate('Analyze')}
       />
+
+      {/* Emergency Report / Get Help Module Trigger */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => (navigation.getParent() as any)?.navigate('ReportHelp')}
+      >
+        <Card style={[styles.emergencyBanner, { backgroundColor: 'rgba(239, 68, 68, 0.16)', borderColor: theme.colors.danger }]}>
+          <View style={styles.emergencyBannerLeft}>
+            <View style={[styles.emergencyBadgeBox, { backgroundColor: theme.colors.danger }]}>
+              <Ionicons name="shield-half-outline" size={22} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.emergencyBannerTitle, { color: theme.colors.textPrimary }]}>
+                Report Fraud / Get Emergency Help
+              </Text>
+              <Text style={[styles.emergencyBannerSub, { color: theme.colors.textSecondary }]}>
+                1930 Helpline, Bank Numbers, Cyber Crime Portal & Recovery Plan
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.emergencyBannerActionBtn, { backgroundColor: theme.colors.danger }]}>
+            <Text style={styles.emergencyBannerActionText}>Get Help</Text>
+            <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
+          </View>
+        </Card>
+      </TouchableOpacity>
 
       {/* 3. Quick Analyze section */}
       <View style={styles.sectionHeader}>
@@ -304,4 +331,49 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  emergencyBanner: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 10,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  emergencyBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  emergencyBadgeBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  emergencyBannerTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  emergencyBannerSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  emergencyBannerActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  emergencyBannerActionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
 });
+
