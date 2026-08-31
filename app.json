@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "UPI ScamGuard",
+    "slug": "upi-scamguard",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.upiscamguard.app"
+    }
+  }
+}
