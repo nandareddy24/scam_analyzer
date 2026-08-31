@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation.types';
 import { ScamCategory, ScanResultData } from '../types/scam.types';
+import { SMSAnalysisResult, SMSScamCategory } from '../types/sms.types';
 import { ScreenWrapper } from '../components/ScreenWrapper';
 import { AppHeader } from '../components/AppHeader';
 import { Input } from '../components/Input';
@@ -18,43 +20,53 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { Card } from '../components/Card';
 import { RiskBadge } from '../components/RiskBadge';
 import { RiskIndicator } from '../components/RiskIndicator';
+import { LoadingView } from '../components/LoadingView';
 import { ErrorView } from '../components/ErrorView';
+import { smsAnalyzer } from '../services/smsAnalyzer';
 import { useScamAnalyzer } from '../hooks/useScamAnalyzer';
 import { useTheme } from '../hooks/useTheme';
 import { getCategoryLabel } from '../utils/formatters';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Analyze'>;
 
-const PRESETS = {
-  sms: [
-    {
-      label: 'PIN Credit Trap',
-      value: 'CONGRATS! Rs 25,000 credited to your UPI account. Enter your 6-digit UPI PIN to accept payment immediately.',
-    },
-    {
-      label: 'Reward Points Trap',
-      value: 'Dear Customer, your SBI reward points will expire today. Redeem now at http://sbi-rewards.top/claim',
-    },
-    {
-      label: 'Legit OTP',
-      value: '123456 is your secret OTP for login to SBI YONO. Do not share with anyone.',
-    },
-  ],
-  upi_vpa: [
-    { label: 'Fake Refund VPA', value: 'paytm-refund-desk@okaxis' },
-    { label: 'Legit Merchant', value: 'merchant.zomato@icici' },
-    { label: 'Suspicious Phone VPA', value: '9876543210.lottery@ybl' },
-  ],
-  url: [
-    { label: 'Phishing Domain', value: 'http://sbi-reward-points.top/claim' },
-    { label: 'Typosquatted Portal', value: 'https://electricity-bill-update-desk.site' },
-    { label: 'Official Site', value: 'https://cybercrime.gov.in' },
-  ],
-  screenshot: [
-    { label: 'Fake Paytm Receipt', value: 'fake_paytm_txn_receipt_5000.png' },
-    { label: 'Authentic GPay Receipt', value: 'authentic_gpay_receipt_150.jpg' },
-  ],
-};
+interface PresetExample {
+  category: SMSScamCategory;
+  label: string;
+  text: string;
+}
+
+const SMS_PRESETS: PresetExample[] = [
+  {
+    category: 'Digital arrest scam',
+    label: 'Digital Arrest Scam',
+    text: 'URGENT NOTICE: CBI & Cyber Police have issued a Digital Arrest Warrant against your Aadhaar for illegal narcotics parcel. Join video call immediately or police force will reach your home.',
+  },
+  {
+    category: 'UPI collect request scam',
+    label: 'UPI PIN Trap Scam',
+    text: 'CONGRATS! Rs 25,000 credited to your GPay account. Enter your 6-digit UPI PIN to accept payment immediately.',
+  },
+  {
+    category: 'KYC scam',
+    label: 'KYC Suspension Scam',
+    text: 'Dear customer, your SBI bank account will be blocked within 24 hours due to pending KYC. Update PAN card immediately at http://sbi-kyc-verify.top',
+  },
+  {
+    category: 'Job scam',
+    label: 'Part-Time Job Scam',
+    text: 'Work from home job offer! Earn Rs 5,000 per day by simply liking YouTube videos. No experience required. Join Telegram: t.me/work_earn_daily',
+  },
+  {
+    category: 'Cashback scam',
+    label: 'Cashback / Lottery Scam',
+    text: 'Congratulations! You won KBC Lucky Draw prize of Rs 25 Lakhs. Contact Manager Ramesh Sharma on WhatsApp 9876543210 to claim prize.',
+  },
+  {
+    category: 'Fake bank message',
+    label: 'Fake Bank Points',
+    text: 'Dear Customer, your 8,500 SBI Reward Points worth Rs 4,250 expire today. Redeem now to your account at http://sbi-rewards-points.site',
+  },
+];
 
 const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'sms', label: 'SMS / Message', icon: 'chatbox-ellipses-outline' },
@@ -65,11 +77,15 @@ const MODE_TABS: { key: ScamCategory; label: string; icon: keyof typeof Ionicons
 
 export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
   const theme = useTheme();
-  const { isAnalyzing, activeCategory, setActiveCategory, analyze, error, clearError } = useScamAnalyzer();
+  const { isAnalyzing: isGeneralAnalyzing, activeCategory, setActiveCategory, analyze, error: generalError, clearError: clearGeneralError } = useScamAnalyzer();
 
   const [inputVal, setInputVal] = useState('');
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
-  const [activeResult, setActiveResult] = useState<ScanResultData | null>(null);
+
+  // Dedicated SMS Scam Analyzer States
+  const [isSMSAnalyzing, setIsSMSAnalyzing] = useState(false);
+  const [smsResult, setSMSResult] = useState<SMSAnalysisResult | null>(null);
+  const [smsError, setSMSError] = useState<string | null>(null);
 
   useEffect(() => {
     if (route.params?.initialCategory) {
@@ -84,16 +100,35 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
     setActiveCategory(cat);
     setInputVal('');
     setSelectedScreenshot(null);
-    clearError();
+    setSMSError(null);
+    clearGeneralError();
   };
 
-  const handleRunAnalysis = async () => {
-    const target = activeCategory === 'screenshot' ? (selectedScreenshot || 'sample_qr_proof.png') : inputVal;
-    const res = await analyze(activeCategory, target);
-    if (res) {
-      setActiveResult(res);
+  const handleAnalyzeSMS = async () => {
+    setSMSError(null);
+    setIsSMSAnalyzing(true);
+
+    try {
+      const result = await smsAnalyzer.analyzeSMS({ messageText: inputVal });
+      setSMSResult(result);
+    } catch (err: any) {
+      setSMSError(err.message || 'Failed to analyze SMS message');
+    } finally {
+      setIsSMSAnalyzing(false);
     }
   };
+
+  const handleGeneralAnalysis = async () => {
+    if (activeCategory === 'sms') {
+      await handleAnalyzeSMS();
+      return;
+    }
+    const target = activeCategory === 'screenshot' ? (selectedScreenshot || 'sample_qr_proof.png') : inputVal;
+    await analyze(activeCategory, target);
+  };
+
+  const charCount = inputVal.length;
+  const maxCharLimit = 1000;
 
   return (
     <ScreenWrapper scrollable>
@@ -143,217 +178,348 @@ export const AnalyzerScreen: React.FC<Props> = ({ route, navigation }) => {
         })}
       </View>
 
-      {/* Main Analysis Form Card */}
-      <Card style={styles.formCard}>
-        <View style={styles.formHeader}>
-          <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.primary}1A` }]}>
-            <Ionicons
-              name={
-                activeCategory === 'sms'
-                  ? 'chatbox-outline'
-                  : activeCategory === 'upi_vpa'
-                  ? 'at-outline'
-                  : activeCategory === 'url'
-                  ? 'globe-outline'
-                  : 'image-outline'
-              }
-              size={22}
-              color={theme.colors.primary}
-            />
+      {/* SMS SCAM ANALYZER MODE */}
+      {activeCategory === 'sms' && (
+        <Card style={styles.formCard}>
+          <View style={styles.formHeader}>
+            <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.caution}1A` }]}>
+              <Ionicons name="chatbox-ellipses" size={22} color={theme.colors.caution} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                SMS & WhatsApp Scam Analyzer
+              </Text>
+              <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+                Detects Digital Arrest, KYC traps, Job scams, and UPI PIN lures
+              </Text>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-              {getCategoryLabel(activeCategory)} Scanner
-            </Text>
-            <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
-              {activeCategory === 'sms'
-                ? 'Check for PIN credit lures and fake bank rewards'
-                : activeCategory === 'upi_vpa'
-                ? 'Check VPA handle against pattern rules & scam database'
-                : activeCategory === 'url'
-                ? 'Check domain age, SSL status, and typosquatting'
-                : 'Extract receipt raster metrics to detect fake app screenshots'}
-            </Text>
-          </View>
-        </View>
 
-        {error && <ErrorView message={error} onRetry={clearError} />}
+          {smsError && (
+            <ErrorView message={smsError} onRetry={() => setSMSError(null)} />
+          )}
 
-        {activeCategory === 'sms' && (
+          {/* Large Text Area Input */}
           <Input
-            label="Paste SMS / Message Text"
-            placeholder="Paste SMS content received on phone..."
+            label="Paste suspicious SMS or WhatsApp message"
+            placeholder="Paste SMS or WhatsApp content received on phone..."
             value={inputVal}
-            onChangeText={setInputVal}
+            onChangeText={(txt) => {
+              if (txt.length <= maxCharLimit) setInputVal(txt);
+            }}
             iconName="chatbox-outline"
             multiline
-            numberOfLines={4}
+            numberOfLines={5}
             containerStyle={{ height: 'auto' }}
             onClear={() => setInputVal('')}
-            helperText="Detects PIN traps, urgent utility threats, and fake bank rewards"
           />
-        )}
 
-        {activeCategory === 'upi_vpa' && (
-          <Input
-            label="Enter UPI ID / VPA Handle"
-            placeholder="e.g. paytm-refund-desk@okaxis or merchant@icici"
-            value={inputVal}
-            onChangeText={setInputVal}
-            iconName="at-outline"
-            onClear={() => setInputVal('')}
-            helperText="Check handles before confirming payment collect requests"
-          />
-        )}
-
-        {activeCategory === 'url' && (
-          <Input
-            label="Paste Website URL / Link"
-            placeholder="e.g. http://sbi-reward-points.top/claim"
-            value={inputVal}
-            onChangeText={setInputVal}
-            iconName="globe-outline"
-            onClear={() => setInputVal('')}
-            helperText="Inspects domain SSL, typosquatting, and malicious top-level domains"
-          />
-        )}
-
-        {activeCategory === 'screenshot' && (
-          <View style={styles.uploadArea}>
-            <TouchableOpacity
-              style={[
-                styles.dropzone,
-                {
-                  borderColor: selectedScreenshot ? theme.colors.primary : theme.colors.border,
-                  backgroundColor: selectedScreenshot ? `${theme.colors.primary}10` : theme.colors.background,
-                },
-              ]}
-              onPress={() => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png')}
-            >
-              <Ionicons
-                name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
-                size={40}
-                color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.uploadTitle,
-                  { color: selectedScreenshot ? theme.colors.primary : theme.colors.textPrimary },
-                ]}
-              >
-                {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
-              </Text>
-              <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
-                Supports PNG, JPG (Simulated OCR font metric inspection)
-              </Text>
-            </TouchableOpacity>
+          {/* Character Counter */}
+          <View style={styles.charCounterRow}>
+            <Text style={[styles.charCounterText, { color: charCount > 900 ? theme.colors.danger : theme.colors.textMuted }]}>
+              {charCount} / {maxCharLimit} characters
+            </Text>
           </View>
-        )}
 
-        {/* Quick Sample Presets */}
-        <Text style={[styles.presetHeader, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-          TEST PRESETS:
-        </Text>
-        <View style={styles.presetsRow}>
-          {PRESETS[activeCategory].map((p, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={[styles.presetChip, { backgroundColor: `${theme.colors.primary}18`, borderColor: `${theme.colors.primary}30` }]}
-              onPress={() => {
-                if (activeCategory === 'screenshot') {
-                  setSelectedScreenshot(p.value);
-                } else {
-                  setInputVal(p.value);
+          {/* Example Scam Messages Presets */}
+          <Text style={[styles.presetHeader, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+            EXAMPLE SCAM MESSAGES (TAP TO TEST):
+          </Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+            {SMS_PRESETS.map((p, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.presetCard, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}
+                onPress={() => setInputVal(p.text)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.presetCategoryPill}>
+                  <Text style={[styles.presetCategoryText, { color: theme.colors.primary }]}>{p.label}</Text>
+                </View>
+                <Text style={[styles.presetPreviewText, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                  {p.text}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Analyze SMS Button */}
+          <PrimaryButton
+            title={isSMSAnalyzing ? 'Analyzing SMS Content...' : 'Analyze SMS Threat Level'}
+            onPress={handleAnalyzeSMS}
+            variant="cyber"
+            loading={isSMSAnalyzing}
+            style={{ marginTop: 16 }}
+            icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
+          />
+        </Card>
+      )}
+
+      {/* OTHER SCAM ANALYZER MODES (UPI ID, URL, SCREENSHOT) */}
+      {activeCategory !== 'sms' && (
+        <Card style={styles.formCard}>
+          <View style={styles.formHeader}>
+            <View style={[styles.modeIconBox, { backgroundColor: `${theme.colors.primary}1A` }]}>
+              <Ionicons
+                name={
+                  activeCategory === 'upi_vpa'
+                    ? 'at-outline'
+                    : activeCategory === 'url'
+                    ? 'globe-outline'
+                    : 'image-outline'
                 }
-              }}
-            >
-              <Text style={[styles.presetText, { color: theme.colors.primary }]}>{p.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+                size={22}
+                color={theme.colors.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.formTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                {getCategoryLabel(activeCategory)} Scanner
+              </Text>
+              <Text style={[styles.formSub, { color: theme.colors.textMuted, ...theme.typography.caption }]}>
+                {activeCategory === 'upi_vpa'
+                  ? 'Check VPA handle against pattern rules & scam database'
+                  : activeCategory === 'url'
+                  ? 'Check domain age, SSL status, and typosquatting'
+                  : 'Extract receipt raster metrics to detect fake app screenshots'}
+              </Text>
+            </View>
+          </View>
 
-        <PrimaryButton
-          title={isAnalyzing ? 'Analyzing Security Indicators...' : 'Run Security Audit'}
-          onPress={handleRunAnalysis}
-          variant="cyber"
-          loading={isAnalyzing}
-          style={{ marginTop: 16 }}
-          icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
-        />
-      </Card>
+          {generalError && <ErrorView message={generalError} onRetry={clearGeneralError} />}
 
-      {/* Analysis Result Modal */}
+          {activeCategory === 'upi_vpa' && (
+            <Input
+              label="Enter UPI ID / VPA Handle"
+              placeholder="e.g. paytm-refund-desk@okaxis or merchant@icici"
+              value={inputVal}
+              onChangeText={setInputVal}
+              iconName="at-outline"
+              onClear={() => setInputVal('')}
+              helperText="Check handles before confirming payment collect requests"
+            />
+          )}
+
+          {activeCategory === 'url' && (
+            <Input
+              label="Paste Website URL / Link"
+              placeholder="e.g. http://sbi-reward-points.top/claim"
+              value={inputVal}
+              onChangeText={setInputVal}
+              iconName="globe-outline"
+              onClear={() => setInputVal('')}
+              helperText="Inspects domain SSL, typosquatting, and malicious top-level domains"
+            />
+          )}
+
+          {activeCategory === 'screenshot' && (
+            <View style={styles.uploadArea}>
+              <TouchableOpacity
+                style={[
+                  styles.dropzone,
+                  {
+                    borderColor: selectedScreenshot ? theme.colors.primary : theme.colors.border,
+                    backgroundColor: selectedScreenshot ? `${theme.colors.primary}10` : theme.colors.background,
+                  },
+                ]}
+                onPress={() => setSelectedScreenshot('fake_paytm_txn_receipt_5000.png')}
+              >
+                <Ionicons
+                  name={selectedScreenshot ? 'document-attach' : 'cloud-upload-outline'}
+                  size={40}
+                  color={selectedScreenshot ? theme.colors.primary : theme.colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.uploadTitle,
+                    { color: selectedScreenshot ? theme.colors.primary : theme.colors.textPrimary },
+                  ]}
+                >
+                  {selectedScreenshot ? selectedScreenshot : 'Select / Drag Payment Proof Screenshot'}
+                </Text>
+                <Text style={[styles.uploadSub, { color: theme.colors.textMuted }]}>
+                  Supports PNG, JPG (Simulated OCR font metric inspection)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <PrimaryButton
+            title={isGeneralAnalyzing ? 'Analyzing Security Indicators...' : 'Run Security Audit'}
+            onPress={handleGeneralAnalysis}
+            variant="cyber"
+            loading={isGeneralAnalyzing}
+            style={{ marginTop: 16 }}
+            icon={<Ionicons name="sparkles" size={18} color="#0B1120" />}
+          />
+        </Card>
+      )}
+
+      {/* SMS RESULT MODAL / CARD */}
       <Modal
-        visible={!!activeResult}
+        visible={!!smsResult}
         animationType="slide"
         transparent
-        onRequestClose={() => setActiveResult(null)}
+        onRequestClose={() => setSMSResult(null)}
       >
         <View style={[styles.modalOverlay, { backgroundColor: theme.colors.overlay }]}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.backgroundSecondary }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                AI Threat Assessment Report
+                SMS Scam Analysis Assessment
               </Text>
-              <TouchableOpacity onPress={() => setActiveResult(null)} style={styles.closeBtn}>
+              <TouchableOpacity onPress={() => setSMSResult(null)} style={styles.closeBtn}>
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            {activeResult && (
+            {smsResult && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <RiskIndicator score={activeResult.riskScore} level={activeResult.riskLevel} />
+                {/* 1. Verdict Banner & Risk Score */}
+                <View
+                  style={[
+                    styles.verdictBanner,
+                    {
+                      backgroundColor:
+                        smsResult.verdict === 'SCAM'
+                          ? 'rgba(220, 38, 38, 0.18)'
+                          : smsResult.verdict === 'SUSPICIOUS'
+                          ? 'rgba(245, 158, 11, 0.18)'
+                          : 'rgba(16, 185, 129, 0.18)',
+                      borderColor:
+                        smsResult.verdict === 'SCAM'
+                          ? theme.colors.danger
+                          : smsResult.verdict === 'SUSPICIOUS'
+                          ? theme.colors.caution
+                          : theme.colors.safe,
+                    },
+                  ]}
+                >
+                  <View style={styles.verdictLeft}>
+                    <Text style={styles.verdictLabelText}>VERDICT</Text>
+                    <Text
+                      style={[
+                        styles.verdictValueText,
+                        {
+                          color:
+                            smsResult.verdict === 'SCAM'
+                              ? theme.colors.danger
+                              : smsResult.verdict === 'SUSPICIOUS'
+                              ? theme.colors.caution
+                              : theme.colors.safe,
+                        },
+                      ]}
+                    >
+                      {smsResult.verdict}
+                    </Text>
+                  </View>
 
-                <Card variant={activeResult.riskScore > 50 ? 'danger' : 'bordered'} style={{ marginVertical: 12 }}>
-                  <Text style={[styles.verdictTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                    {activeResult.verdictTitle}
+                  <View style={styles.confidencePill}>
+                    <Ionicons name="analytics" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={[styles.confidenceText, { color: theme.colors.primary }]}>
+                      {smsResult.confidencePercentage}% AI Confidence
+                    </Text>
+                  </View>
+                </View>
+
+                {/* 2. Risk Meter Gauge */}
+                <RiskIndicator
+                  score={smsResult.riskScore}
+                  level={
+                    smsResult.riskLevel === 'CRITICAL'
+                      ? 'critical'
+                      : smsResult.riskLevel === 'HIGH'
+                      ? 'high_risk'
+                      : smsResult.riskLevel === 'MEDIUM'
+                      ? 'caution'
+                      : 'safe'
+                  }
+                />
+
+                {/* 3. Scam Category & Risk Level Badges */}
+                <Card variant="bordered" style={styles.metaBadgeCard}>
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Scam Category</Text>
+                    <View style={[styles.categoryBadgePill, { backgroundColor: `${theme.colors.primary}20` }]}>
+                      <Text style={[styles.categoryBadgeText, { color: theme.colors.primary }]}>
+                        {smsResult.scamCategory}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.metaRow}>
+                    <Text style={[styles.metaLabel, { color: theme.colors.textSecondary }]}>Severity Level</Text>
+                    <RiskBadge
+                      level={
+                        smsResult.riskLevel === 'CRITICAL'
+                          ? 'critical'
+                          : smsResult.riskLevel === 'HIGH'
+                          ? 'high_risk'
+                          : smsResult.riskLevel === 'MEDIUM'
+                          ? 'caution'
+                          : 'safe'
+                      }
+                      customText={smsResult.riskLevel}
+                      size="small"
+                    />
+                  </View>
+                </Card>
+
+                {/* 4. Explanation */}
+                <Card variant="bordered" style={{ marginBottom: 12 }}>
+                  <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary }]}>
+                    AI Analysis Summary
                   </Text>
-                  <Text style={[styles.summaryText, { color: theme.colors.textSecondary, ...theme.typography.body2 }]}>
-                    {activeResult.summary}
+                  <Text style={[styles.explanationText, { color: theme.colors.textSecondary }]}>
+                    {smsResult.explanation}
                   </Text>
                 </Card>
 
-                {/* Threat Factors List */}
-                <Text style={[styles.factorHeader, { color: theme.colors.textPrimary, ...theme.typography.subtitle1 }]}>
-                  Detected Risk Indicators ({activeResult.threatFactors.length})
+                {/* 5. Detected Red Flags */}
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginBottom: 8 }]}>
+                  Detected Red Flags ({smsResult.detectedRedFlags.length})
                 </Text>
 
-                {activeResult.threatFactors.length === 0 ? (
-                  <Text style={{ color: theme.colors.safe, marginVertical: 8, fontSize: 13 }}>
-                    ✓ No anomalous keywords, fraudulent structures, or domain traps detected.
+                {smsResult.detectedRedFlags.length === 0 ? (
+                  <Text style={{ color: theme.colors.safe, marginBottom: 12, fontSize: 13 }}>
+                    ✓ No anomalous keywords, PIN extortion lures, or phishing links detected.
                   </Text>
                 ) : (
-                  activeResult.threatFactors.map((tf) => (
-                    <View key={tf.id} style={[styles.factorItem, { backgroundColor: theme.colors.cardBackground }]}>
-                      <View style={styles.factorTop}>
-                        <Text style={[styles.factorName, { color: theme.colors.textPrimary }]}>{tf.name}</Text>
+                  smsResult.detectedRedFlags.map((flag) => (
+                    <View key={flag.id} style={[styles.flagItem, { backgroundColor: theme.colors.cardBackground }]}>
+                      <View style={styles.flagTop}>
+                        <Ionicons name="alert-circle" size={16} color={theme.colors.danger} style={{ marginRight: 6 }} />
+                        <Text style={[styles.flagTitle, { color: theme.colors.textPrimary }]}>{flag.title}</Text>
                         <RiskBadge
-                          level={tf.severity === 'critical' ? 'critical' : tf.severity === 'high' ? 'high_risk' : 'caution'}
-                          customText={tf.severity.toUpperCase()}
+                          level={flag.severity === 'critical' ? 'critical' : flag.severity === 'high' ? 'high_risk' : 'caution'}
+                          customText={flag.severity.toUpperCase()}
                           size="small"
                         />
                       </View>
-                      <Text style={[styles.factorDesc, { color: theme.colors.textSecondary }]}>
-                        {tf.description}
+                      <Text style={[styles.flagDesc, { color: theme.colors.textSecondary }]}>
+                        {flag.description}
                       </Text>
                     </View>
                   ))
                 )}
 
-                {/* Recommended Guidance */}
-                <View style={[styles.actionBox, { backgroundColor: `${theme.colors.primary}12`, borderColor: `${theme.colors.primary}40` }]}>
-                  <Ionicons name="shield-half-outline" size={20} color={theme.colors.primary} style={{ marginRight: 8 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.actionTitle, { color: theme.colors.primary }]}>RECOMMENDED SAFETY ACTION</Text>
-                    <Text style={[styles.actionText, { color: theme.colors.textPrimary }]}>
-                      {activeResult.recommendedAction}
-                    </Text>
-                  </View>
+                {/* 6. Recommended Actions */}
+                <Text style={[styles.sectionHeading, { color: theme.colors.textPrimary, marginTop: 8, marginBottom: 8 }]}>
+                  Recommended Guidance
+                </Text>
+                <View style={[styles.actionListBox, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
+                  {smsResult.recommendedActions.map((action, idx) => (
+                    <View key={idx} style={styles.actionItemRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={theme.colors.safe} style={{ marginRight: 8, marginTop: 2 }} />
+                      <Text style={[styles.actionItemText, { color: theme.colors.textPrimary }]}>{action}</Text>
+                    </View>
+                  ))}
                 </View>
 
                 <PrimaryButton
-                  title="Close Assessment"
-                  onPress={() => setActiveResult(null)}
+                  title="Close SMS Assessment"
+                  onPress={() => setSMSResult(null)}
                   variant="secondary"
                   style={{ marginTop: 16 }}
                 />
@@ -407,6 +573,47 @@ const styles = StyleSheet.create({
   formSub: {
     marginTop: 1,
   },
+  charCounterRow: {
+    alignItems: 'flex-end',
+    marginTop: -8,
+    marginBottom: 12,
+  },
+  charCounterText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  presetHeader: {
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  presetScroll: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  presetCard: {
+    width: 220,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginRight: 10,
+  },
+  presetCategoryPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(14, 165, 233, 0.15)',
+    marginBottom: 6,
+  },
+  presetCategoryText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  presetPreviewText: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
   uploadArea: {
     marginBottom: 16,
   },
@@ -428,29 +635,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
-  presetHeader: {
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  presetsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-  },
-  presetChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  presetText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -459,7 +643,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '88%',
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -473,52 +657,112 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
-  verdictTitle: {
-    fontWeight: '800',
-    marginBottom: 6,
+  verdictBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
   },
-  summaryText: {
+  verdictLeft: {
+    flex: 1,
+  },
+  verdictLabelText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+  },
+  verdictValueText: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  confidencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(14, 165, 233, 0.15)',
+  },
+  confidenceText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  metaBadgeCard: {
+    marginBottom: 12,
+    padding: 12,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  metaLabel: {
+    fontSize: 13,
+  },
+  categoryBadgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  categoryBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginVertical: 6,
+  },
+  sectionHeading: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  explanationText: {
+    fontSize: 13,
     lineHeight: 18,
   },
-  factorHeader: {
-    fontWeight: '800',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  factorItem: {
+  flagItem: {
     padding: 12,
     borderRadius: 10,
     marginBottom: 8,
   },
-  factorTop: {
+  flagTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-  factorName: {
+  flagTitle: {
     fontWeight: '700',
     fontSize: 13,
+    flex: 1,
+    marginRight: 6,
   },
-  factorDesc: {
+  flagDesc: {
     fontSize: 12,
     lineHeight: 16,
   },
-  actionBox: {
-    flexDirection: 'row',
+  actionListBox: {
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    marginTop: 12,
   },
-  actionTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  actionItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  actionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
+  actionItemText: {
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
   },
 });
